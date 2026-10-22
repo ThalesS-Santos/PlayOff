@@ -29,8 +29,8 @@ function DrawForm({ t, mod, onClose }: { t: Tournament; mod: Modality; onClose: 
   const sizes = Array.from({ length: groups }, (_, i) => Math.floor(n / groups) + (i < n % groups ? 1 : 0))
 
   const run = () => {
-    generate(t.id, mod.id, isGroups ? { groupCount: groups, advance: adv } : undefined)
-    toast({ title: 'Chave sorteada!', body: `${mod.sport}: jogos gerados e agendados sem conflitos.` })
+    if (!generate(t.id, mod.id, isGroups ? { groupCount: groups, advance: adv } : undefined)) return
+    toast({ title: 'Chave sorteada!', body: `${mod.sport}: jogos gerados e agendados.` })
     onClose()
   }
 

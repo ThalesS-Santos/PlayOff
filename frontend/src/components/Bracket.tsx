@@ -2,23 +2,17 @@ import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import { Crown } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { setsWon, winnerOf } from '../lib/engine'
+import { winnerOf } from '../lib/engine'
+import { scoreOf } from '../lib/format'
 import type { Match, Modality, Team } from '../lib/types'
-import { AnimatedNumber, Crest, LiveDot, softSpring } from './ui'
+import { softSpring } from './motion'
+import { AnimatedNumber, Crest, LiveDot } from './ui'
 
 const W = 220
 const H = 68
 const GAP_Y = 22
 const GAP_X = 64
 const HEAD = 34
-
-export function scoreOf(m: Match, side: 'a' | 'b'): number | undefined {
-  const s = m.sumula
-  if (!s) return undefined
-  if (s.kind === 'pontos') return side === 'a' ? s.a : s.b
-  if (s.kind === 'set') return setsWon(s)[side === 'a' ? 0 : 1]
-  return undefined
-}
 
 function Side({ m, side, team, hovered, onHover }: { m: Match; side: 'a' | 'b'; team?: Team; hovered?: string; onHover: (id?: string) => void }) {
   const w = winnerOf(m)
@@ -107,7 +101,7 @@ export function Bracket({ mod, teams, onSelect }: { mod: Modality; teams: Team[]
                     stroke="var(--color-brand)"
                     strokeWidth={2}
                     strokeLinecap="round"
-                    initial={{ pathLength: 0 }}
+                    initial={{ pathLength: 0, opacity: 1 }}
                     animate={{ pathLength: w ? 1 : 0, opacity: lit ? 1 : 0.18 }}
                     transition={{ pathLength: { duration: 0.7, delay: 0.25 + ri * 0.18, ease: 'easeInOut' }, opacity: { duration: 0.2 } }}
                   />

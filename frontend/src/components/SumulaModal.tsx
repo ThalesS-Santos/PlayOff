@@ -2,24 +2,14 @@ import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import { CalendarDays, Clock, Flag, MapPin, Minus, Plus, Timer, Trash2, UserRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { ranking, setsWon, winnerOf } from '../lib/engine'
+import { ranking, resultLocked, setsWon, winnerOf } from '../lib/engine'
 import { useStore } from '../lib/store'
+import { canRecord, isClosed } from '../lib/tournament'
 import type { Card, Match, Modality, Sumula, Team, Tournament } from '../lib/types'
+import { fmtDate, fmtTime, parseTime } from '../lib/format'
+import { spring } from './motion'
 import { Reschedule } from './Reschedule'
-import { AnimatedNumber, Button, Crest, fmtDate, inputCls, LiveDot, Modal, spring } from './ui'
-
-export function fmtTime(ms: number) {
-  const m = Math.floor(ms / 60000)
-  const s = Math.floor((ms % 60000) / 1000)
-  const c = Math.floor((ms % 1000) / 10)
-  return `${m ? `${m}:` : ''}${String(s).padStart(m ? 2 : 1, '0')}.${String(c).padStart(2, '0')}`
-}
-
-function parseTime(v: string): number | null {
-  const m = v.trim().match(/^(?:(\d+):)?(\d{1,2})(?:[.,](\d{1,2}))?$/)
-  if (!m) return null
-  return (Number(m[1] ?? 0) * 60 + Number(m[2])) * 1000 + Number((m[3] ?? '0').padEnd(2, '0')) * 10
-}
+import { AnimatedNumber, Button, Crest, inputCls, LiveDot, Modal } from './ui'
 
 function Stepper({ value, onChange, disabled }: { value: number; onChange: (n: number) => void; disabled?: boolean }) {
   return (
@@ -95,7 +85,7 @@ function Cards({ cards, setCards, teams, readOnly }: { cards: Card[]; setCards: 
           <input type="number" min={0} className={`${inputCls} h-9`} value={minute} onChange={(e) => setMinute(Number(e.target.value))} aria-label="Minuto" />
           <div className="flex gap-1.5">
             {(['amarelo', 'vermelho'] as const).map((color) => (
-              <motion.button key={color} whileTap={{ scale: 0.85 }} onClick={() => setCards([...cards, { teamId: team, playerId: player, color, minute }])} className="grid h-9 flex-1 place-items-center rounded-xl bg-surface-2 px-2 hover:bg-line" aria-label={`Cartão ${color}`}>
+              <motion.button key={color} whileTap={{ scale: 0.85 }} disabled={!player} onClick={() => setCards([...cards, { teamId: team, playerId: player, color, minute }])} className="grid h-9 flex-1 place-items-center rounded-xl bg-surface-2 px-2 hover:bg-line" aria-label={`Cartão ${color}`}>
                 <span className={clsx('h-4 w-3 rounded-sm', color === 'amarelo' ? 'bg-yellow-400' : 'bg-red-500')} />
               </motion.button>
             ))}
@@ -108,7 +98,9 @@ function Cards({ cards, setCards, teams, readOnly }: { cards: Card[]; setCards: 
 
 export function SumulaModal({ t, mod, match, onClose }: { t: Tournament; mod?: Modality; match: Match | null; onClose: () => void }) {
   const { canManage, registerSumula, saveLive, toast } = useStore()
-  const readOnly = !canManage(t)
+  const manage = canManage(t)
+  const locked = !!mod && !!match && resultLocked(mod, match)
+  const readOnly = !manage || !canRecord(t) || locked
   const team = (id?: string) => t.teams.find((x) => x.id === id)
   const [a, setA] = useState(0)
   const [b, setB] = useState(0)
@@ -148,7 +140,7 @@ export function SumulaModal({ t, mod, match, onClose }: { t: Tournament; mod?: M
     if (!s) return toast({ title: 'Preencha todos os tempos', body: 'Formato: 28.43 ou 1:02.10', tone: 'warn' })
     const preview = { ...match, sumula: s }
     if (knockout && mod.kind !== 'colocacao' && !winnerOf(preview)) return toast({ title: 'Mata-mata precisa de vencedor', body: mod.kind === 'pontos' ? 'Informe os pênaltis.' : 'Adicione o set decisivo.', tone: 'warn' })
-    registerSumula(t.id, mod.id, match.id, s)
+    if (!registerSumula(t.id, mod.id, match.id, s)) return
     const w = mod.kind === 'colocacao' ? ranking(preview)[0]?.teamId : winnerOf(preview)
     toast({ title: 'Súmula registrada', body: w ? `${team(w)?.name} vence${match.nextMatchId ? ' e avança na chave' : ''}!` : 'Resultado salvo.' })
     onClose()
@@ -157,8 +149,8 @@ export function SumulaModal({ t, mod, match, onClose }: { t: Tournament; mod?: M
   const live = () => {
     if (!match) return
     const s = build()
-    if (!s) return
-    saveLive(t.id, mod.id, match.id, s)
+    if (!s) return toast({ title: 'Preencha todos os tempos', body: 'Formato: 28.43 ou 1:02.10', tone: 'warn' })
+    if (!saveLive(t.id, mod.id, match.id, s)) return
     toast({ title: 'Placar ao vivo atualizado', tone: 'info' })
     onClose()
   }
@@ -196,7 +188,7 @@ export function SumulaModal({ t, mod, match, onClose }: { t: Tournament; mod?: M
             </span>
           </div>
 
-          {!readOnly && match.status === 'agendada' && !match.bye && <Reschedule key={match.id} t={t} mod={mod} match={match} />}
+          {manage && !isClosed(t) && match.status === 'agendada' && !match.bye && <Reschedule key={match.id} t={t} mod={mod} match={match} />}
 
           {!ready && <p className="rounded-2xl bg-surface-2 p-4 text-sm text-muted">Os adversários desta partida ainda não foram definidos.</p>}
 
@@ -311,7 +303,15 @@ export function SumulaModal({ t, mod, match, onClose }: { t: Tournament; mod?: M
               <Button onClick={finish}>Encerrar partida</Button>
             </div>
           )}
-          {readOnly && <p className="mt-5 text-center text-xs text-faint">Somente o organizador pode alterar a súmula.</p>}
+          {readOnly && (
+            <p className="mt-5 text-center text-xs text-faint">
+              {!manage
+                ? 'Somente o organizador pode alterar a súmula.'
+                : locked
+                  ? 'A fase seguinte já começou: este resultado não pode mais ser alterado.'
+                  : 'Súmulas são registradas com o chaveamento definido ou o torneio em andamento.'}
+            </p>
+          )}
         </>
       )}
     </Modal>

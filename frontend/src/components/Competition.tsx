@@ -3,15 +3,16 @@ import { AnimatePresence, motion } from 'motion/react'
 import { AlertTriangle, ChevronRight, Clock, MapPin, Medal } from 'lucide-react'
 import { ranking, standings, winnerOf } from '../lib/engine'
 import type { Match, Modality, Team } from '../lib/types'
-import { scoreOf } from './Bracket'
-import { fmtTime } from './SumulaModal'
-import { Crest, fmtDate, LiveDot, rise, spring, stagger } from './ui'
+import { fmtDate, fmtTime, scoreOf } from '../lib/format'
+import { rise, spring, stagger } from './motion'
+import { Crest, LiveDot } from './ui'
 
 /* ───────────── Classificação dos grupos ───────────── */
 
 export function GroupTables({ mod, teams }: { mod: Modality; teams: Team[] }) {
   const byId = new Map(teams.map((t) => [t.id, t]))
-  const adv = mod.advancePerGroup ?? 2
+  // grupo único sempre leva os dois primeiros à final
+  const adv = mod.groups.length === 1 ? 2 : (mod.advancePerGroup ?? 2)
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" className="grid gap-4 lg:grid-cols-2">
       {mod.groups.map((g) => {

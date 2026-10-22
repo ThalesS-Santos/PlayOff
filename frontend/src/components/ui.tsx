@@ -4,10 +4,9 @@ import { CheckCircle2, Info, TriangleAlert, X } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { STATUS_LABEL, useStore } from '../lib/store'
+import { softSpring, spring } from './motion'
 import type { Team, TournamentStatus } from '../lib/types'
 
-export const spring = { type: 'spring', stiffness: 380, damping: 30 } as const
-export const softSpring = { type: 'spring', stiffness: 220, damping: 26 } as const
 
 /* ───────────── Botão ───────────── */
 
@@ -253,16 +252,6 @@ export function Page({ children, className }: { children: ReactNode; className?:
   )
 }
 
-export const stagger = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.06, delayChildren: 0.05 } },
-}
-
-export const rise = {
-  hidden: { opacity: 0, y: 18 },
-  show: { opacity: 1, y: 0, transition: softSpring },
-}
-
 export function Empty({ icon, title, body, action }: { icon: ReactNode; title: string; body?: string; action?: ReactNode }) {
   return (
     <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} className="grid place-items-center rounded-3xl border border-dashed border-line px-6 py-16 text-center">
@@ -274,9 +263,4 @@ export function Empty({ icon, title, body, action }: { icon: ReactNode; title: s
       {action && <div className="mt-5">{action}</div>}
     </motion.div>
   )
-}
-
-export function fmtDate(d?: string, opts: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short' }) {
-  if (!d) return '—'
-  return new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', opts).replace('.', '')
 }

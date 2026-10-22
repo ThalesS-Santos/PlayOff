@@ -3,9 +3,11 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ArrowLeft, ArrowRight, Check, Crown, Globe2, Lock, Plus, Rocket, Sparkles, Trash2, Wand2, X } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Crest, Field, inputCls, Page, spring } from '../components/ui'
+import { spring } from '../components/motion'
+import { Button, Crest, Field, inputCls, Page } from '../components/ui'
 import { generateMatches, scheduleTournament, uid } from '../lib/engine'
-import { TEAM_COLORS } from '../lib/registry'
+import { TEAM_COLORS, validatePrize } from '../lib/registry'
+import { splitList, validateDetails } from '../lib/tournament'
 import { useStore } from '../lib/store'
 import type { Format, Modality, Prize, SumulaKind, Team, Tournament } from '../lib/types'
 
@@ -46,7 +48,7 @@ interface DraftMod {
 const STEPS = ['Dados', 'Modalidades', 'Equipes', 'Premiação', 'Revisão']
 
 export default function CreateTournament() {
-  const { user, dispatch, toast } = useStore()
+  const { user, dispatch, toast, tournaments } = useStore()
   const nav = useNavigate()
   const [step, setStep] = useState(0)
   const [dir, setDir] = useState(1)
@@ -71,12 +73,12 @@ export default function CreateTournament() {
   const validate = (s: number) => {
     const e: string[] = []
     if (s === 0) {
-      if (name.trim().length < 3) e.push('Dê um nome ao torneio (mín. 3 letras).')
-      if (endDate < startDate) e.push('A data final deve ser depois da inicial.')
-      if (visibility === 'privado' && code.trim().length < 4) e.push('Torneio privado precisa de um código com 4+ caracteres.')
+      e.push(...validateDetails({ name, description, startDate, endDate, city, venueName, venues: splitList(venues), visibility, accessCode: code }, tournaments, user!.id))
+      if (!splitList(referees).length) e.push('Informe ao menos um árbitro.')
     }
     if (s === 1 && !mods.length) e.push('Adicione pelo menos uma modalidade.')
     if (s === 2) mods.forEach((m) => m.teams.length < 2 && e.push(`${m.sport}: inscreva ao menos 2 equipes.`))
+    if (s === 3) prizes.forEach((p, i) => validatePrize({ ...p, id: String(i) }).forEach((msg) => e.push(`Prêmio ${i + 1}: ${msg}`)))
     setErrors(e)
     return !e.length
   }
@@ -130,12 +132,13 @@ export default function CreateTournament() {
       endDate,
       city,
       venueName,
-      venues: venues.split(',').map((v) => v.trim()).filter(Boolean),
-      referees: referees.split(',').map((v) => v.trim()).filter(Boolean),
+      venues: splitList(venues),
+      referees: splitList(referees),
       cover,
       teams,
       modalities,
-      prizes: prizes.map((p) => ({ ...p, id: uid('pz') })),
+      // modalidade removida no assistente: o prêmio passa a ser "Geral"
+      prizes: prizes.map((p) => ({ ...p, name: p.name.trim(), modalityId: mods.some((m) => m.id === p.modalityId) ? p.modalityId : undefined, id: uid('pz') })),
       favoritedBy: [],
       createdAt: Date.now(),
     }
@@ -143,7 +146,7 @@ export default function CreateTournament() {
       t = scheduleTournament({
         ...t,
         status: 'chaveamento',
-        modalities: t.modalities.map((m) => generateMatches(m, m.teamIds.length >= 16 ? 4 : m.teamIds.length >= 4 ? 2 : 1)),
+        modalities: t.modalities.map((m) => generateMatches(m)),
       })
     }
     dispatch({ type: 'upsert', t })
@@ -165,9 +168,10 @@ export default function CreateTournament() {
           <li key={s} className="flex flex-1 items-center gap-2">
             <button onClick={() => i < step && go(i)} className="flex items-center gap-2" disabled={i > step}>
               <motion.span
-                animate={{ scale: i === step ? 1.1 : 1, backgroundColor: i <= step ? 'var(--color-brand)' : 'var(--color-surface-2)' }}
+                animate={{ scale: i === step ? 1.1 : 1 }}
                 transition={spring}
-                className="grid size-8 shrink-0 place-items-center rounded-full text-sm font-bold text-white"
+                // cor por classe: a biblioteca de animação não interpola variáveis CSS
+                className={clsx('grid size-8 shrink-0 place-items-center rounded-full text-sm font-bold text-white transition-colors duration-300', i <= step ? 'bg-brand' : 'bg-surface-2')}
               >
                 <AnimatePresence mode="wait" initial={false}>
                   {i < step ? (
@@ -277,7 +281,7 @@ export default function CreateTournament() {
 
             {step === 1 && <ModalitiesStep mods={mods} setMods={setMods} />}
             {step === 2 && <TeamsStep mods={mods} setMods={setMods} />}
-            {step === 3 && <PrizesStep prizes={prizes} setPrizes={setPrizes} />}
+            {step === 3 && <PrizesStep prizes={prizes} setPrizes={setPrizes} mods={mods} />}
             {step === 4 && (
               <div>
                 <div className="relative h-28 overflow-hidden rounded-2xl" style={{ background: `linear-gradient(120deg, ${cover[0]}, ${cover[1]})` }}>
@@ -467,7 +471,7 @@ function TeamsStep({ mods, setMods }: { mods: DraftMod[]; setMods: (m: DraftMod[
             onSubmit={(e) => {
               e.preventDefault()
               const v = (drafts[m.id] ?? '').trim()
-              if (!v || m.teams.includes(v)) return
+              if (!v || m.teams.some((x) => x.toLocaleLowerCase('pt-BR') === v.toLocaleLowerCase('pt-BR'))) return
               patch(m.id, { teams: [...m.teams, v] })
               setDrafts({ ...drafts, [m.id]: '' })
             }}
@@ -511,29 +515,44 @@ function TeamsStep({ mods, setMods }: { mods: DraftMod[]; setMods: (m: DraftMod[
   )
 }
 
-function PrizesStep({ prizes, setPrizes }: { prizes: Omit<Prize, 'id'>[]; setPrizes: (p: Omit<Prize, 'id'>[]) => void }) {
+function PrizesStep({ prizes, setPrizes, mods }: { prizes: Omit<Prize, 'id'>[]; setPrizes: (p: Omit<Prize, 'id'>[]) => void; mods: DraftMod[] }) {
+  const patch = (i: number, p: Partial<Prize>) => setPrizes(prizes.map((x, j) => (j === i ? { ...x, ...p } : x)))
   return (
     <div>
-      <p className="text-sm text-muted">Opcional: cadastre prêmios do catálogo para os vencedores.</p>
+      <p className="text-sm text-muted">Opcional: prêmios coletivos são entregues automaticamente do 1º ao 3º lugar de cada modalidade.</p>
       <ul className="mt-4 space-y-2">
         <AnimatePresence initial={false}>
           {prizes.map((p, i) => (
-            <motion.li key={i} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: 30 }} className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_130px_90px_110px_36px]">
-              <input className={`${inputCls} col-span-2 sm:col-span-1`} value={p.name} onChange={(e) => setPrizes(prizes.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} placeholder="Nome do prêmio" />
-              <select className={inputCls} value={p.kind} onChange={(e) => setPrizes(prizes.map((x, j) => (j === i ? { ...x, kind: e.target.value as Prize['kind'] } : x)))}>
+            <motion.li key={i} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: 30 }} className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_120px_120px_100px_100px_36px]">
+              <input className={`${inputCls} col-span-2 sm:col-span-1`} value={p.name} onChange={(e) => patch(i, { name: e.target.value })} placeholder="Nome do prêmio" aria-label={`Nome do prêmio ${i + 1}`} />
+              <select className={inputCls} value={p.kind} onChange={(e) => patch(i, { kind: e.target.value as Prize['kind'] })} aria-label={`Tipo do prêmio ${i + 1}`}>
                 <option value="coletivo">Coletivo</option>
                 <option value="individual">Individual</option>
               </select>
-              <input type="number" min={1} className={inputCls} value={p.place} onChange={(e) => setPrizes(prizes.map((x, j) => (j === i ? { ...x, place: Number(e.target.value) } : x)))} aria-label="Colocação" />
-              <input type="number" min={0} className={inputCls} value={p.value ?? ''} onChange={(e) => setPrizes(prizes.map((x, j) => (j === i ? { ...x, value: e.target.value ? Number(e.target.value) : undefined } : x)))} placeholder="R$" aria-label="Valor" />
-              <button onClick={() => setPrizes(prizes.filter((_, j) => j !== i))} className="grid place-items-center text-faint hover:text-live" aria-label="Remover prêmio">
+              <select className={inputCls} value={p.modalityId ?? ''} onChange={(e) => patch(i, { modalityId: e.target.value || undefined })} aria-label={`Modalidade do prêmio ${i + 1}`}>
+                <option value="">Geral</option>
+                {mods.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.sport}
+                  </option>
+                ))}
+              </select>
+              <select className={inputCls} value={p.place} disabled={p.kind === 'individual'} onChange={(e) => patch(i, { place: Number(e.target.value) })} aria-label={`Colocação do prêmio ${i + 1}`}>
+                {[1, 2, 3].map((n) => (
+                  <option key={n} value={n}>
+                    {n}º
+                  </option>
+                ))}
+              </select>
+              <input type="number" min={0} className={inputCls} value={p.value ?? ''} onChange={(e) => patch(i, { value: e.target.value ? Number(e.target.value) : undefined })} placeholder="R$" aria-label={`Valor do prêmio ${i + 1}`} />
+              <button onClick={() => setPrizes(prizes.filter((_, j) => j !== i))} className="grid place-items-center text-faint hover:text-live" aria-label={`Remover prêmio ${i + 1}`}>
                 <Trash2 size={16} />
               </button>
             </motion.li>
           ))}
         </AnimatePresence>
       </ul>
-      <Button className="mt-4" variant="soft" size="sm" icon={<Sparkles size={14} />} onClick={() => setPrizes([...prizes, { name: '', kind: 'coletivo', place: prizes.length + 1 }])}>
+      <Button className="mt-4" variant="soft" size="sm" icon={<Sparkles size={14} />} onClick={() => setPrizes([...prizes, { name: '', kind: 'coletivo', place: Math.min(3, prizes.length + 1) }])}>
         Adicionar prêmio
       </Button>
     </div>

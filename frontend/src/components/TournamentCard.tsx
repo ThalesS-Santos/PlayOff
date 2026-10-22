@@ -4,7 +4,9 @@ import { CalendarDays, Heart, Lock, MapPin, Users } from 'lucide-react'
 import { progress } from '../lib/engine'
 import { useStore } from '../lib/store'
 import type { Tournament } from '../lib/types'
-import { fmtDate, rise, StatusBadge } from './ui'
+import { fmtDate } from '../lib/format'
+import { rise } from './motion'
+import { StatusBadge } from './ui'
 
 export function FavButton({ t, className }: { t: Tournament; className?: string }) {
   const { user, dispatch, toast } = useStore()

@@ -112,7 +112,7 @@ export function prizeWinners(t: Tournament, p: Prize): Team[] {
 export function validatePrize(p: Prize): string[] {
   const errors: string[] = []
   if (!p.name.trim()) errors.push('Informe o nome do prêmio.')
-  if (!Number.isInteger(p.place) || p.place < 1) errors.push('Colocação deve ser 1 ou mais.')
+  if (p.kind === 'coletivo' && (!Number.isInteger(p.place) || p.place < 1 || p.place > 3)) errors.push('Colocação deve ser 1º, 2º ou 3º lugar.')
   if (p.value != null && (Number.isNaN(p.value) || p.value < 0)) errors.push('Valor não pode ser negativo.')
   return errors
 }

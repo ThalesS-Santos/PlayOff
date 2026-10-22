@@ -1,8 +1,10 @@
-import { AnimatePresence, MotionConfig } from 'motion/react'
+﻿import { AnimatePresence, MotionConfig } from 'motion/react'
 import { BrowserRouter, matchPath, Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { Navbar, useBrandHue } from './components/Layout'
+import { Navbar } from './components/Layout'
+import { useBrandHue } from './components/useBrandHue'
 import { Toaster } from './components/ui'
-import { StoreProvider, useStore } from './lib/store'
+import { useStore } from './lib/store'
+import { StoreProvider } from './lib/StoreProvider'
 import Catalog from './pages/Catalog'
 import CreateTournament from './pages/CreateTournament'
 import Dashboard from './pages/Dashboard'
@@ -10,7 +12,7 @@ import Identity from './pages/Identity'
 import Login from './pages/Login'
 import TournamentPage from './pages/TournamentPage'
 
-function Shell() {
+export function Shell() {
   const location = useLocation()
   const { user, orgs, get, orgOf } = useStore()
 

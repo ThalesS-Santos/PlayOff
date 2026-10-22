@@ -2,8 +2,9 @@ import clsx from 'clsx'
 import { motion } from 'motion/react'
 import { Check, Palette, Trophy } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useBrandHue } from '../components/Layout'
-import { Button, Crest, Field, inputCls, Page, rise, spring, stagger } from '../components/ui'
+import { useBrandHue } from '../components/useBrandHue'
+import { rise, spring, stagger } from '../components/motion'
+import { Button, Crest, Field, inputCls, Page } from '../components/ui'
 import { useStore } from '../lib/store'
 
 const PRESETS = [

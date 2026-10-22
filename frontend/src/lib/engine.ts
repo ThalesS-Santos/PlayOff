@@ -388,8 +388,51 @@ export function standings(group: Group, matches: Match[]): Standing[] {
   )
 }
 
+/** Problemas de preenchimento da súmula (valores negativos, set empatado, tempos inválidos). */
+export function sumulaErrors(s: Sumula, m?: Match): string[] {
+  const e: string[] = []
+  const bad = (n: number) => !Number.isInteger(n) || n < 0
+  if (s.kind === 'pontos') {
+    if (bad(s.a) || bad(s.b)) e.push('Placar deve ter números inteiros não negativos.')
+    if ((s.penA != null && bad(s.penA)) || (s.penB != null && bad(s.penB))) e.push('Pênaltis devem ser números inteiros não negativos.')
+  }
+  if (s.kind === 'set') {
+    if (!s.sets.length) e.push('Informe ao menos um set.')
+    s.sets.forEach(([x, y], i) => {
+      if (bad(x) || bad(y)) e.push(`Set ${i + 1}: use números inteiros não negativos.`)
+      else if (x === y) e.push(`Set ${i + 1} empatado: todo set tem um vencedor.`)
+    })
+  }
+  if (s.kind !== 'colocacao' && s.cards.some((c) => !c.playerId || bad(c.minute))) e.push('Cartão sem atleta ou com minuto inválido.')
+  if (s.kind === 'colocacao') {
+    if (s.entries.some((x) => !Number.isFinite(x.timeMs) || x.timeMs <= 0)) e.push('Todos os tempos devem ser maiores que zero.')
+    if (m?.participants && (s.entries.length !== m.participants.length || s.entries.some((x) => !m.participants!.includes(x.teamId))))
+      e.push('A súmula deve trazer o tempo de todos os participantes.')
+  }
+  return e
+}
+
+/**
+ * Resultado de partida encerrada só pode ser corrigido enquanto o que depende dele
+ * ainda não começou (RN14): a próxima partida da chave, ou o mata-mata, no caso de grupos.
+ */
+export function resultLocked(mod: Modality, m: Match): boolean {
+  if (m.status !== 'encerrada' || m.bye) return false
+  const started = (x: Match) => x.status !== 'agendada'
+  if (m.nextMatchId) return mod.matches.some((x) => x.id === m.nextMatchId && started(x) && !x.bye)
+  if (m.groupId) return mod.matches.some((x) => !x.groupId && !x.bye && started(x))
+  return false
+}
+
 /** Registra súmula, encerra a partida e propaga o vencedor pela chave. */
 export function applySumula(mod: Modality, matchId: string, sumula: Sumula): Modality {
+  const target = mod.matches.find((m) => m.id === matchId)
+  if (!target) throw new Error('Partida não encontrada.')
+  if (target.bye) throw new Error('Partida com bye não tem súmula.')
+  if (!(target.participants || (target.a && target.b))) throw new Error('Os adversários desta partida ainda não foram definidos.')
+  if (resultLocked(mod, target)) throw new Error('A fase seguinte já começou: este resultado não pode mais ser alterado.')
+  const errors = sumulaErrors(sumula, target)
+  if (errors.length) throw new Error(errors[0])
   let matches = mod.matches.map((m) =>
     m.id === matchId ? { ...m, sumula, status: 'encerrada' as const } : m,
   )
@@ -661,10 +704,13 @@ export function detectConflicts(t: Tournament): Conflict[] {
         else if (tx.some((tm) => ty.includes(tm))) conflicts.push({ matchIds: [x.id, y.id], reason: `Time com dois jogos em ${k}` })
       }
   }
-  // partidas que a agenda não conseguiu alocar no período do torneio
+  // partidas que a agenda não conseguiu alocar, ou que ficaram fora do período (após editar datas)
+  const days = new Set(tournamentDays(t))
   for (const mod of t.modalities)
-    for (const m of mod.matches)
-      if (!m.bye && m.status === 'agendada' && !(m.date && m.time))
-        conflicts.push({ matchIds: [m.id], reason: 'Sem horário livre no período do torneio' })
+    for (const m of mod.matches) {
+      if (m.bye || m.status !== 'agendada') continue
+      if (!(m.date && m.time)) conflicts.push({ matchIds: [m.id], reason: 'Sem horário livre no período do torneio' })
+      else if (!days.has(m.date)) conflicts.push({ matchIds: [m.id], reason: 'Partida fora do período do torneio' })
+    }
   return conflicts
 }

@@ -5,7 +5,8 @@ import { useState } from 'react'
 import { reschedule, SLOTS, slotConflicts, tournamentDays, unpin, type Slot } from '../lib/engine'
 import { useStore } from '../lib/store'
 import type { Match, Modality, Tournament } from '../lib/types'
-import { Button, fmtDate, inputCls } from './ui'
+import { fmtDate } from '../lib/format'
+import { Button, inputCls } from './ui'
 
 /** Reagendamento manual de uma partida, com checagem de conflitos (RF04). */
 export function Reschedule({ t, mod, match }: { t: Tournament; mod: Modality; match: Match }) {
@@ -38,8 +39,8 @@ export function Reschedule({ t, mod, match }: { t: Tournament; mod: Modality; ma
               variant="ghost"
               icon={<PinOff size={14} />}
               onClick={() => {
-                edit(t.id, (x) => unpin(x, match.id))
-                toast({ title: 'Horário liberado', body: 'A otimização da agenda pode mover esta partida.', tone: 'info' })
+                if (edit(t.id, (x) => unpin(x, match.id)))
+                  toast({ title: 'Horário liberado', body: 'A otimização da agenda pode mover esta partida.', tone: 'info' })
               }}
             >
               Liberar para otimização
@@ -98,7 +99,7 @@ export function Reschedule({ t, mod, match }: { t: Tournament; mod: Modality; ma
           disabled={unchanged || reasons.length > 0}
           icon={<Pin size={14} />}
           onClick={() => {
-            edit(t.id, (x) => reschedule(x, match.id, slot))
+            if (!edit(t.id, (x) => reschedule(x, match.id, slot))) return
             toast({ title: 'Partida reagendada', body: `${fmtDate(slot.date)} às ${slot.time} · ${slot.venue}` })
             setOpen(false)
           }}

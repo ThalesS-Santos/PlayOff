@@ -10,6 +10,8 @@ import {
   groupCountOptions,
   placeOf,
   reschedule,
+  resultLocked,
+  sumulaErrors,
   roundRobin,
   scheduleTournament,
   seedOrder,
@@ -289,6 +291,67 @@ describe('reagendamento manual', () => {
     t = scheduleTournament(t, '2026-11-10')
     const semiKey = `${semi.date} ${semi.time}`
     for (const m of t.modalities[0].matches.filter((x) => x.groupId)) expect(`${m.date} ${m.time}` < semiKey).toBe(true)
+  })
+})
+
+describe('validação da súmula', () => {
+  it('pontos, pênaltis e cartões', () => {
+    expect(sumulaErrors(win(2, 1))).toEqual([])
+    expect(sumulaErrors(win(-1, 1.5))).toEqual(['Placar deve ter números inteiros não negativos.'])
+    expect(sumulaErrors({ ...win(1, 1), penA: -1, penB: 2 } as Sumula)).toEqual(['Pênaltis devem ser números inteiros não negativos.'])
+    expect(sumulaErrors({ kind: 'pontos', a: 1, b: 0, cards: [{ teamId: 'a', playerId: '', color: 'amarelo', minute: 3 }] })).toEqual(['Cartão sem atleta ou com minuto inválido.'])
+  })
+
+  it('sets: sem sets, set empatado ou negativo', () => {
+    expect(sumulaErrors({ kind: 'set', sets: [], cards: [] })).toEqual(['Informe ao menos um set.'])
+    expect(sumulaErrors({ kind: 'set', sets: [[25, 25], [-1, 3]], cards: [] })).toEqual(['Set 1 empatado: todo set tem um vencedor.', 'Set 2: use números inteiros não negativos.'])
+  })
+
+  it('colocação: tempos positivos e todos os participantes', () => {
+    const m: Match = { id: 'p', phase: 'Final', round: 1, slot: 0, participants: ['A', 'B'], status: 'agendada' }
+    expect(sumulaErrors({ kind: 'colocacao', entries: [{ teamId: 'A', timeMs: 1 }, { teamId: 'B', timeMs: 2 }] }, m)).toEqual([])
+    expect(sumulaErrors({ kind: 'colocacao', entries: [{ teamId: 'A', timeMs: 0 }] }, m)).toEqual(['Todos os tempos devem ser maiores que zero.', 'A súmula deve trazer o tempo de todos os participantes.'])
+    expect(sumulaErrors({ kind: 'colocacao', entries: [{ teamId: 'A', timeMs: 1 }, { teamId: 'X', timeMs: 2 }] }, m)).toEqual(['A súmula deve trazer o tempo de todos os participantes.'])
+  })
+
+  it('applySumula recusa partida inexistente, bye, sem adversários e súmula inválida', () => {
+    const m = mod({ format: 'eliminacao', teamIds: teams(3), matches: generateElimination('m', teams(3)) })
+    const bye = m.matches.find((x) => x.bye)!
+    const final = m.matches.find((x) => !x.nextMatchId)!
+    const real = m.matches.find((x) => !x.bye && x.round === 1)!
+    expect(() => applySumula(m, 'nada', win(1, 0))).toThrow(/não encontrada/)
+    expect(() => applySumula(m, bye.id, win(1, 0))).toThrow(/bye/)
+    expect(() => applySumula(m, final.id, win(1, 0))).toThrow(/adversários/)
+    expect(() => applySumula(m, real.id, win(-2, 0))).toThrow(/não negativos/)
+  })
+})
+
+describe('resultado travado (RN14)', () => {
+  it('mata-mata: corrige até a próxima partida começar', () => {
+    let m = mod({ format: 'eliminacao', teamIds: teams(4), matches: generateElimination('m', teams(4)) })
+    const [sf1, sf2] = m.matches.filter((x) => x.round === 1)
+    m = applySumula(m, sf1.id, win(2, 0))
+    m = applySumula(m, sf1.id, win(0, 2)) // correção permitida: a final ainda não começou
+    expect(m.matches.find((x) => !x.nextMatchId)!.a).toBe(sf1.b)
+    m = applySumula(m, sf2.id, win(1, 0))
+    const final = m.matches.find((x) => !x.nextMatchId)!
+    m = { ...m, matches: m.matches.map((x) => (x.id === final.id ? { ...x, status: 'ao_vivo' as const } : x)) }
+    expect(resultLocked(m, m.matches.find((x) => x.id === sf1.id)!)).toBe(true)
+    expect(() => applySumula(m, sf1.id, win(3, 0))).toThrow(/fase seguinte/)
+  })
+
+  it('grupos: travam quando o mata-mata começa; partidas pendentes nunca travam', () => {
+    let m = generateMatches(mod({ format: 'grupos_mata', teamIds: teams(8) }), 2)
+    const g = m.matches.find((x) => x.groupId)!
+    expect(resultLocked(m, g)).toBe(false)
+    m = applySumula(m, g.id, win(1, 0))
+    expect(resultLocked(m, m.matches.find((x) => x.id === g.id)!)).toBe(false)
+    const ko = m.matches.find((x) => !x.groupId)!
+    m = { ...m, matches: m.matches.map((x) => (x.id === ko.id ? { ...x, status: 'encerrada' as const } : x)) }
+    expect(resultLocked(m, m.matches.find((x) => x.id === g.id)!)).toBe(true)
+    // prova (sem próxima partida nem grupo) nunca trava
+    const p = generateMatches(mod({ format: 'prova', kind: 'colocacao', teamIds: ['A', 'B'] }))
+    expect(resultLocked(p, { ...p.matches[0], status: 'encerrada' })).toBe(false)
   })
 })
 

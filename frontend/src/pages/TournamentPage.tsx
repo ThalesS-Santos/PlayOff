@@ -12,7 +12,9 @@ import {
   LayoutGrid,
   Lock,
   MapPin,
+  Pencil,
   Play,
+  SearchX,
   Shirt,
   Shuffle,
   Sparkles,
@@ -22,18 +24,23 @@ import {
   Wand2,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { AccessModal } from '../components/AccessModal'
 import { Bracket } from '../components/Bracket'
-import { DrawModal } from '../components/DrawModal'
-import { RegistrationsTab } from '../components/Registrations'
 import { Calendar, GroupTables, MatchRow } from '../components/Competition'
+import { DrawModal } from '../components/DrawModal'
+import { EditTournamentModal } from '../components/EditTournament'
+import { rise, spring, stagger } from '../components/motion'
+import { RegistrationsTab } from '../components/Registrations'
 import { SumulaModal } from '../components/SumulaModal'
 import { FavButton } from '../components/TournamentCard'
-import { AnimatedNumber, Button, Crest, Empty, fmtDate, Modal, Page, rise, spring, stagger, StatusBadge, Tabs } from '../components/ui'
+import { AnimatedNumber, Button, Crest, Empty, Modal, Page, StatusBadge, Tabs } from '../components/ui'
 import { champion, detectConflicts, progress } from '../lib/engine'
+import { fmtDate } from '../lib/format'
+import { canView } from '../lib/permissions'
 import { prizeModality, prizeWinners } from '../lib/registry'
 import { STATUS_LABEL, useStore } from '../lib/store'
+import { isClosed, transitionErrors } from '../lib/tournament'
 import type { Match, Modality, Team, Tournament, TournamentStatus } from '../lib/types'
 
 type Tab = 'chave' | 'partidas' | 'times' | 'premios' | 'cadastros' | 'gestao'
@@ -47,17 +54,28 @@ const NEXT: Partial<Record<TournamentStatus, { to: TournamentStatus; label: stri
 
 export default function TournamentPage() {
   const { id } = useParams()
-  const store = useStore()
-  const t = store.get(id ?? '')
-  if (!t) return <Navigate to="/torneios" replace />
+  const { get } = useStore()
+  const nav = useNavigate()
+  const t = get(id ?? '')
+  if (!t)
+    return (
+      <Page className="pt-12">
+        <Empty
+          icon={<SearchX />}
+          title="Torneio não encontrado"
+          body="Ele pode ter sido excluído ou o endereço está errado."
+          action={<Button onClick={() => nav('/torneios')}>Buscar torneios</Button>}
+        />
+      </Page>
+    )
   return <TournamentView key={t.id} t={t} />
 }
 
 function TournamentView({ t }: { t: Tournament }) {
-  const { canManage, unlocked, orgOf } = useStore()
+  const { canManage, unlocked, orgOf, user } = useStore()
   const nav = useNavigate()
   const manage = canManage(t)
-  const locked = t.visibility === 'privado' && !manage && !unlocked.includes(t.id)
+  const locked = !canView(user, t, unlocked)
   const [tab, setTab] = useState<Tab>('chave')
   const [modId, setModId] = useState(t.modalities[0]?.id)
   const [sel, setSel] = useState<{ m: Match; modId: string } | null>(null)
@@ -217,7 +235,8 @@ function BracketTab({ t, mod, setModId, onSelect }: { t: Tournament; mod: Modali
           title="Chaveamento ainda não gerado"
           body={`${mod.teamIds.length} equipes inscritas. A chave é sorteada quando as inscrições encerram.`}
           action={
-            canManage(t) && (
+            canManage(t) &&
+            !isClosed(t) && (
               <Button icon={<Sparkles size={16} />} onClick={() => setDrawing(true)}>
                 Sortear e gerar jogos
               </Button>
@@ -395,19 +414,17 @@ function PrizesTab({ t }: { t: Tournament }) {
 function ManageTab({ t }: { t: Tournament }) {
   const { optimize, toast, transition, dispatch } = useStore()
   const [drawMod, setDrawMod] = useState<Modality | null>(null)
+  const [editing, setEditing] = useState(false)
   const nav = useNavigate()
   const conflicts = detectConflicts(t)
-  const [busy, setBusy] = useState(false)
   const [confirm, setConfirm] = useState<'cancel' | 'delete' | null>(null)
   const next = NEXT[t.status]
+  const blocked = next ? transitionErrors(t, next.to) : []
+  const closed = isClosed(t)
 
   const runOptimize = () => {
-    setBusy(true)
-    setTimeout(() => {
-      optimize(t.id)
-      setBusy(false)
-      toast({ title: 'Agenda otimizada', body: conflicts.length ? `${conflicts.length} conflito(s) resolvido(s).` : 'Calendário já estava balanceado.' })
-    }, 1200)
+    if (!optimize(t.id)) return
+    toast({ title: 'Agenda otimizada', body: conflicts.length ? `${conflicts.length} conflito(s) antes da otimização.` : 'Calendário já estava balanceado.' })
   }
 
   return (
@@ -429,20 +446,27 @@ function ManageTab({ t }: { t: Tournament }) {
         <div className="mt-5 flex flex-wrap gap-2">
           {next && (
             <Button
+              disabled={blocked.length > 0}
               onClick={() => {
-                transition(t.id, next.to)
-                toast({ title: STATUS_LABEL[next.to], body: t.name })
+                if (transition(t.id, next.to)) toast({ title: STATUS_LABEL[next.to], body: t.name })
               }}
             >
               {next.label}
             </Button>
           )}
-          {t.status !== 'cancelado' && t.status !== 'finalizado' && (
+          {!closed && (
             <Button variant="danger" onClick={() => setConfirm('cancel')}>
               Cancelar torneio
             </Button>
           )}
         </div>
+        {blocked.length > 0 && (
+          <ul className="mt-3 space-y-0.5 text-xs text-warn" role="status">
+            {blocked.map((b) => (
+              <li key={b}>• {b}</li>
+            ))}
+          </ul>
+        )}
       </Panel>
 
       <Panel icon={<Wand2 size={18} />} title="Otimização logística" body="Realoca partidas pendentes sem conflitos de local, árbitro ou equipe, respeitando descanso entre jogos (RF04).">
@@ -459,8 +483,8 @@ function ManageTab({ t }: { t: Tournament }) {
             </ul>
           </div>
         </div>
-        <Button className="mt-5" onClick={runOptimize} disabled={busy} icon={busy ? <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}><Sparkles size={16} /></motion.span> : <Sparkles size={16} />}>
-          {busy ? 'Otimizando…' : 'Otimizar agenda'}
+        <Button className="mt-5" onClick={runOptimize} disabled={closed} icon={<Sparkles size={16} />}>
+          Otimizar agenda
         </Button>
       </Panel>
 
@@ -471,7 +495,7 @@ function ManageTab({ t }: { t: Tournament }) {
               <span>
                 {m.sport} <span className="text-faint">· {m.teamIds.length} equipes · {m.format === 'eliminacao' ? 'Eliminação simples' : m.format === 'grupos_mata' ? 'Grupos + mata-mata' : 'Prova'}</span>
               </span>
-              <Button size="sm" variant="soft" icon={<Shuffle size={14} />} onClick={() => setDrawMod(m)}>
+              <Button size="sm" variant="soft" icon={<Shuffle size={14} />} disabled={closed} onClick={() => setDrawMod(m)}>
                 Sortear
               </Button>
             </div>
@@ -481,6 +505,9 @@ function ManageTab({ t }: { t: Tournament }) {
 
       <Panel icon={<Users size={18} />} title="Acesso e dados" body={t.visibility === 'privado' ? `Torneio privado. Código de acesso: ${t.accessCode}` : 'Torneio público: aparece no catálogo para todos.'}>
         <div className="mt-5 flex flex-wrap gap-2">
+          <Button variant="soft" icon={<Pencil size={15} />} onClick={() => setEditing(true)}>
+            Editar dados
+          </Button>
           <Button variant="danger" icon={<Trash2 size={15} />} onClick={() => setConfirm('delete')}>
             Excluir torneio
           </Button>
@@ -488,6 +515,7 @@ function ManageTab({ t }: { t: Tournament }) {
       </Panel>
 
       <DrawModal t={t} mod={drawMod} onClose={() => setDrawMod(null)} />
+      <EditTournamentModal t={t} open={editing} onClose={() => setEditing(false)} />
 
       <Modal open={!!confirm} onClose={() => setConfirm(null)} title={confirm === 'delete' ? 'Excluir torneio?' : 'Cancelar torneio?'}>
         <p className="text-sm text-muted">{confirm === 'delete' ? 'O torneio some do catálogo. Você pode restaurar a demonstração pelo menu do usuário.' : 'O torneio passa ao estado "Cancelado" e não poderá mais ser disputado.'}</p>
@@ -502,8 +530,7 @@ function ManageTab({ t }: { t: Tournament }) {
                 dispatch({ type: 'remove', id: t.id })
                 nav('/painel')
                 toast({ title: 'Torneio excluído', tone: 'info' })
-              } else {
-                transition(t.id, 'cancelado')
+              } else if (transition(t.id, 'cancelado')) {
                 toast({ title: 'Torneio cancelado', tone: 'warn' })
               }
               setConfirm(null)

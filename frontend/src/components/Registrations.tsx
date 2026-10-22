@@ -23,7 +23,8 @@ import {
 } from '../lib/registry'
 import { useStore } from '../lib/store'
 import type { Prize, Team, Tournament } from '../lib/types'
-import { Button, Crest, Empty, Field, inputCls, Modal, rise, stagger } from './ui'
+import { rise, stagger } from './motion'
+import { Button, Crest, Empty, Field, inputCls, Modal } from './ui'
 
 /** Aba de cadastros do organizador (RF02): times, jogadores, técnicos e árbitros. */
 export function RegistrationsTab({ t }: { t: Tournament }) {
@@ -126,8 +127,7 @@ export function RegistrationsTab({ t }: { t: Tournament }) {
             variant="danger"
             disabled={!!removing && lockedModalities(t, removing.id).length > 0}
             onClick={() => {
-              edit(t.id, (x) => removeTeam(x, removing!.id))
-              toast({ title: 'Time excluído', body: removing!.name, tone: 'info' })
+              if (edit(t.id, (x) => removeTeam(x, removing!.id))) toast({ title: 'Time excluído', body: removing!.name, tone: 'info' })
               setRemoving(null)
             }}
           >
@@ -165,7 +165,7 @@ function TeamEditor({ t, team, onClose }: { t: Tournament; team: Team | null; on
     const errs = validateTeam(draft, t)
     setErrors(errs)
     if (errs.length) return
-    edit(t.id, (x) => upsertTeam(x, draft, mods))
+    if (!edit(t.id, (x) => upsertTeam(x, draft, mods))) return
     toast({ title: isNew ? 'Time cadastrado' : 'Time atualizado', body: draft.name.trim() })
     onClose()
   }
@@ -299,7 +299,7 @@ function PrizesPanel({ t }: { t: Tournament }) {
     const errs = validatePrize(editing)
     setErrors(errs)
     if (errs.length) return
-    edit(t.id, (x) => upsertPrize(x, editing))
+    if (!edit(t.id, (x) => upsertPrize(x, editing))) return
     toast({ title: isNew ? 'Prêmio cadastrado' : 'Prêmio atualizado', body: editing.name.trim() })
     setEditing(null)
   }
@@ -340,8 +340,7 @@ function PrizesPanel({ t }: { t: Tournament }) {
                 </button>
                 <button
                   onClick={() => {
-                    edit(t.id, (x) => removePrize(x, p.id))
-                    toast({ title: 'Prêmio removido', body: p.name, tone: 'info' })
+                    if (edit(t.id, (x) => removePrize(x, p.id))) toast({ title: 'Prêmio removido', body: p.name, tone: 'info' })
                   }}
                   className="rounded-lg p-1.5 text-faint hover:bg-surface-2 hover:text-live"
                   aria-label={`Excluir ${p.name}`}
@@ -432,7 +431,7 @@ function RefereesPanel({ t }: { t: Tournament }) {
     const err = validateReferee(name, t)
     setError(err)
     if (err) return
-    edit(t.id, (x) => addReferee(x, name))
+    if (!edit(t.id, (x) => addReferee(x, name))) return
     toast({ title: 'Árbitro cadastrado', body: name.trim() })
     setName('')
   }

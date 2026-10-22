@@ -1,17 +1,11 @@
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import { Compass, LayoutDashboard, LogOut, Palette, Plus, RefreshCcw, UserRound } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
-import { Button, spring } from './ui'
-
-export function useBrandHue(hue: number | undefined) {
-  useEffect(() => {
-    if (hue == null) return
-    document.documentElement.style.setProperty('--brand-h', String(hue))
-  }, [hue])
-}
+import { spring } from './motion'
+import { Button } from './ui'
 
 export function Logo({ compact }: { compact?: boolean }) {
   return (
@@ -109,6 +103,8 @@ export function Navbar() {
                 <>
                   <div className="fixed inset-0" onClick={() => setOpen(false)} />
                   <motion.div
+                    role="menu"
+                    aria-label="Menu do usuário"
                     initial={{ opacity: 0, y: -8, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -6, scale: 0.96 }}
@@ -157,7 +153,7 @@ export function Navbar() {
 
 function MenuBtn({ icon, children, onClick }: { icon: ReactNode; children: ReactNode; onClick: () => void }) {
   return (
-    <button onClick={onClick} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-muted transition hover:bg-surface hover:text-ink">
+    <button role="menuitem" onClick={onClick} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-muted transition hover:bg-surface hover:text-ink">
       {icon}
       {children}
     </button>

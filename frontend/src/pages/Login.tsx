@@ -4,7 +4,8 @@ import { ArrowRight, CalendarClock, Eye, GitFork, Palette, ShieldCheck, Trophy }
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Logo } from '../components/Layout'
-import { Button, inputCls, rise, spring, stagger } from '../components/ui'
+import { rise, spring, stagger } from '../components/motion'
+import { Button, inputCls } from '../components/ui'
 import { useStore } from '../lib/store'
 import type { Role } from '../lib/types'
 
