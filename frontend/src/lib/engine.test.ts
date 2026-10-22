@@ -1,0 +1,183 @@
+import { describe, expect, it } from 'vitest'
+import {
+  applySumula,
+  champion,
+  detectConflicts,
+  generateElimination,
+  generateGroups,
+  generateMatches,
+  roundRobin,
+  scheduleTournament,
+  seedOrder,
+  standings,
+  winnerOf,
+} from './engine'
+import { buildSeed } from './seed'
+import type { Match, Modality, Sumula, Tournament } from './types'
+
+const teams = (n: number) => Array.from({ length: n }, (_, i) => `t${i + 1}`)
+const win = (a: number, b: number): Sumula => ({ kind: 'pontos', a, b, cards: [] })
+
+function mod(p: Partial<Modality> & Pick<Modality, 'format' | 'teamIds'>): Modality {
+  return { id: 'm', sport: 'Futsal', kind: 'pontos', category: 'M', seeds: [], groups: [], matches: [], ...p }
+}
+
+/** Joga todas as partidas disponíveis; o time "mais forte" (menor índice) vence. */
+function playAll(m: Modality, sumula = (x: Match): Sumula => (Number(x.a!.slice(1)) < Number(x.b!.slice(1)) ? win(2, 0) : win(0, 2))) {
+  let cur = m
+  for (let guard = 0; guard < 200; guard++) {
+    const next = cur.matches.find((x) => !x.bye && x.status !== 'encerrada' && x.a && x.b)
+    if (!next) break
+    cur = applySumula(cur, next.id, sumula(next))
+  }
+  return cur
+}
+
+describe('seedOrder', () => {
+  it('separa os cabeças de chave em metades opostas', () => {
+    expect(seedOrder(4)).toEqual([1, 4, 2, 3])
+    expect(seedOrder(8)).toEqual([1, 8, 4, 5, 2, 7, 3, 6])
+  })
+})
+
+describe('eliminação simples', () => {
+  it.each([2, 3, 4, 5, 6, 7, 8, 13, 16])('%i times: chave completa e um campeão', (n) => {
+    const seeds = teams(n)
+    const matches = generateElimination('m', seeds)
+    const p = 2 ** Math.ceil(Math.log2(n))
+    expect(matches).toHaveLength(p - 1)
+    expect(matches.filter((m) => m.bye)).toHaveLength(p - n)
+    // todo time aparece exatamente uma vez na 1ª rodada
+    const r1 = matches.filter((m) => m.round === 1).flatMap((m) => [m.a, m.b]).filter(Boolean)
+    expect(r1.sort()).toEqual([...seeds].sort())
+    const done = playAll(mod({ format: 'eliminacao', teamIds: seeds, matches }))
+    expect(champion(done)).toBe('t1')
+  })
+
+  it('byes vão para os melhores cabeças de chave', () => {
+    const matches = generateElimination('m', teams(6))
+    const byeTeams = matches.filter((m) => m.bye).map((m) => m.a ?? m.b)
+    expect(byeTeams.sort()).toEqual(['t1', 't2'])
+  })
+
+  it('recusa encerrar mata-mata empatado sem pênaltis', () => {
+    const m = mod({ format: 'eliminacao', teamIds: teams(4), matches: generateElimination('m', teams(4)) })
+    const first = m.matches[0]
+    expect(() => applySumula(m, first.id, win(1, 1))).toThrow(/vencedor/)
+    const ok = applySumula(m, first.id, { ...win(1, 1), penA: 5, penB: 4 } as Sumula)
+    expect(ok.matches.find((x) => x.id === first.nextMatchId)![first.nextSide!]).toBe(first.a)
+  })
+
+  it('súmula de set: vence quem ganha mais sets', () => {
+    const m: Match = { id: 'x', phase: 'Final', round: 1, slot: 0, a: 'A', b: 'B', status: 'encerrada', sumula: { kind: 'set', sets: [[25, 20], [18, 25], [15, 10]], cards: [] } }
+    expect(winnerOf(m)).toBe('A')
+  })
+})
+
+describe('round-robin', () => {
+  it.each([3, 4, 5, 6, 7])('%i times: todos se enfrentam uma vez, sem jogar duas vezes na rodada', (n) => {
+    const rounds = roundRobin(teams(n))
+    const pairs = rounds.flat().map(([a, b]) => [a, b].sort().join('-'))
+    expect(new Set(pairs).size).toBe((n * (n - 1)) / 2)
+    expect(pairs).toHaveLength((n * (n - 1)) / 2)
+    for (const r of rounds) {
+      const ids = r.flat()
+      expect(new Set(ids).size).toBe(ids.length)
+    }
+  })
+})
+
+describe('fase de grupos + mata-mata', () => {
+  it.each([
+    [8, 2],
+    [12, 3],
+    [16, 4],
+    [15, 5],
+    [14, 7],
+  ])('%i times em %i grupos: classificados preenchem a chave e há campeão', (n, g) => {
+    const seeds = teams(n)
+    const { groups, matches } = generateGroups('m', seeds, g)
+    expect(groups.flatMap((x) => x.teamIds).sort()).toEqual([...seeds].sort())
+    // na 1ª rodada do mata-mata, nunca dois classificados do mesmo grupo
+    for (const m of matches.filter((x) => !x.groupId && x.round === 1 && x.sourceA && x.sourceB))
+      expect(m.sourceA!.groupId).not.toBe(m.sourceB!.groupId)
+    const done = playAll(mod({ format: 'grupos_mata', teamIds: seeds, groups, matches }))
+    expect(done.matches.every((m) => m.status === 'encerrada')).toBe(true)
+    expect(champion(done)).toBe('t1')
+  })
+
+  it('3 grupos não geram confronto repetido do mesmo grupo', () => {
+    const { matches } = generateGroups('m', teams(9), 3)
+    const ko = matches.filter((x) => !x.groupId)
+    const labels = ko.filter((x) => x.round === 1 && !x.bye).map((x) => `${x.placeholderA} x ${x.placeholderB}`)
+    expect(labels).not.toContain('1º Grupo C x 2º Grupo C')
+    // 6 classificados únicos entre todos os lados da chave
+    const sources = ko.flatMap((x) => [x.sourceA, x.sourceB]).filter(Boolean).map((s) => `${s!.groupId}:${s!.place}`)
+    expect(new Set(sources).size).toBe(6)
+  })
+
+  it('desempate por confronto direto', () => {
+    const group = { id: 'g', name: 'Grupo A', teamIds: ['D', 'C', 'B', 'A'] }
+    const mk = (id: string, a: string, b: string, s: Sumula): Match => ({ id, phase: 'Grupo A', round: 1, slot: 0, groupId: 'g', a, b, status: 'encerrada', sumula: s })
+    // A e B empatam em pontos, saldo, gols pró e vitórias; A venceu o confronto direto
+    const table = standings(group, [mk('1', 'B', 'A', win(0, 1)), mk('2', 'C', 'A', win(1, 0)), mk('3', 'B', 'D', win(1, 0))])
+    expect(table.map((s) => s.teamId)).toEqual(['C', 'A', 'B', 'D'])
+  })
+
+  it('desempate por fair play quando tudo empata', () => {
+    const group = { id: 'g', name: 'Grupo A', teamIds: ['A', 'B'] }
+    const m: Match = { id: '1', phase: 'Grupo A', round: 1, slot: 0, groupId: 'g', a: 'A', b: 'B', status: 'encerrada', sumula: { kind: 'pontos', a: 1, b: 1, cards: [{ teamId: 'A', playerId: 'p', color: 'vermelho', minute: 10 }] } }
+    expect(standings(group, [m]).map((s) => s.teamId)).toEqual(['B', 'A'])
+  })
+})
+
+describe('prova (colocação)', () => {
+  it('campeão é o menor tempo', () => {
+    let m = generateMatches(mod({ format: 'prova', kind: 'colocacao', teamIds: ['A', 'B', 'C'] }))
+    m = applySumula(m, m.matches[0].id, { kind: 'colocacao', entries: [{ teamId: 'A', timeMs: 3000 }, { teamId: 'B', timeMs: 2500 }, { teamId: 'C', timeMs: 2800 }] })
+    expect(champion(m)).toBe('B')
+  })
+})
+
+describe('agenda (RF04)', () => {
+  function tournament(days: [string, string], venues: string[], referees: string[], n = 8): Tournament {
+    return {
+      id: 't', name: 'T', description: '', orgId: 'o', organizerId: 'u', visibility: 'publico', status: 'chaveamento',
+      startDate: days[0], endDate: days[1], city: '', venueName: '', venues, referees, cover: ['#000', '#fff'],
+      teams: [], prizes: [], favoritedBy: [], createdAt: 0,
+      modalities: [generateMatches(mod({ format: 'grupos_mata', teamIds: teams(n) }))],
+    }
+  }
+
+  it('aloca tudo sem conflitos quando há espaço', () => {
+    const t = scheduleTournament(tournament(['2026-11-10', '2026-11-20'], ['Quadra 1', 'Quadra 2'], ['R1', 'R2']))
+    expect(detectConflicts(t)).toEqual([])
+    const ms = t.modalities[0].matches.filter((m) => !m.bye)
+    expect(ms.every((m) => m.date && m.time && m.venue && m.referee)).toBe(true)
+  })
+
+  it('respeita a ordem das fases', () => {
+    const t = scheduleTournament(tournament(['2026-11-10', '2026-11-20'], ['Q1', 'Q2'], ['R1', 'R2']))
+    const key = (m: Match) => `${m.date} ${m.time}`
+    const ms = t.modalities[0].matches
+    const lastGroup = ms.filter((m) => m.groupId).map(key).sort().pop()!
+    for (const m of ms.filter((x) => !x.groupId && !x.bye)) expect(key(m) > lastGroup).toBe(true)
+  })
+
+  it('sinaliza partidas que não couberam no período', () => {
+    const t = scheduleTournament(tournament(['2026-11-10', '2026-11-10'], ['Q1'], ['R1'], 16))
+    const c = detectConflicts(t)
+    expect(c.some((x) => x.reason.startsWith('Sem horário'))).toBe(true)
+  })
+})
+
+describe('dados de demonstração', () => {
+  it('só a Liga Corporativa tem conflitos (propositais), e o otimizador os resolve', () => {
+    for (const t of buildSeed()) {
+      if (t.id === 't3') {
+        expect(detectConflicts(t).length).toBeGreaterThan(0)
+        expect(detectConflicts(scheduleTournament(t, '2026-10-22'))).toEqual([])
+      } else expect(detectConflicts(t), t.name).toEqual([])
+    }
+  })
+})

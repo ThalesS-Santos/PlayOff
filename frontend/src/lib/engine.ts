@@ -100,14 +100,19 @@ function buildKnockout(modId: string, pairs: [Entry | null, Entry | null][]): Ma
     roundSize /= 2
     round++
   }
-  // byes avançam automaticamente
+  // byes avançam automaticamente (time definido ou classificado de grupo ainda pendente)
   for (const m of matches.filter((x) => x.bye)) {
-    const w = m.a ?? m.b
     m.status = 'encerrada'
-    if (w && m.nextMatchId) {
-      const next = matches.find((x) => x.id === m.nextMatchId)!
-      next[m.nextSide!] = w
-    }
+    if (!m.nextMatchId) continue
+    const next = matches.find((x) => x.id === m.nextMatchId)!
+    const side = m.nextSide!
+    const fromA = m.a != null || m.sourceA != null
+    const w = fromA ? m.a : m.b
+    const source = fromA ? m.sourceA : m.sourceB
+    const label = fromA ? m.placeholderA : m.placeholderB
+    if (w) next[side] = w
+    if (source) next[side === 'a' ? 'sourceA' : 'sourceB'] = source
+    if (label) next[side === 'a' ? 'placeholderA' : 'placeholderB'] = label
   }
   return matches
 }
@@ -181,6 +186,20 @@ export function generateGroups(
         }),
       ),
     )
+  }
+
+  const first = (g: Group): Entry => ({ label: `1º ${g.name}`, source: { groupId: g.id, place: 1 } })
+  const second = (g: Group): Entry => ({ label: `2º ${g.name}`, source: { groupId: g.id, place: 2 } })
+
+  // nº ímpar de grupos: chave semeada com byes (primeiros colocados, depois segundos em
+  // ordem inversa), evitando que dois times do mesmo grupo se reencontrem na 1ª rodada
+  if (groupCount > 1 && groupCount % 2) {
+    const entries = [...groups.map(first), ...(advance === 1 ? [] : [...groups].reverse().map(second))]
+    const p = nextPow2(entries.length)
+    const order = seedOrder(p)
+    const pairs: [Entry | null, Entry | null][] = []
+    for (let i = 0; i < p; i += 2) pairs.push([entries[order[i] - 1] ?? null, entries[order[i + 1] - 1] ?? null])
+    return { groups, matches: [...matches, ...buildKnockout(modId, pairs)] }
   }
 
   // cruzamento olímpico: 1ºA x 2ºB, 1ºB x 2ºA ...
@@ -322,8 +341,35 @@ export function standings(group: Group, matches: Match[]): Standing[] {
       B.pts++
     }
   }
+  const played = matches.filter((m) => m.groupId === group.id && m.status === 'encerrada' && m.sumula)
+  // confronto direto: pontos que x fez contra y (3 vitória, 1 empate)
+  const headToHead = (x: string, y: string) => {
+    let px = 0
+    for (const m of played) {
+      if (!((m.a === x && m.b === y) || (m.a === y && m.b === x))) continue
+      const w = winnerOf(m)
+      px += w === x ? 3 : w ? 0 : 1
+    }
+    return px
+  }
+  // fair play: amarelo 1, vermelho 3 (menos é melhor)
+  const discipline = (team: string) =>
+    played.reduce(
+      (n, m) =>
+        n +
+        (m.sumula!.kind === 'colocacao'
+          ? 0
+          : m.sumula!.cards.filter((c) => c.teamId === team).reduce((k, c) => k + (c.color === 'vermelho' ? 3 : 1), 0)),
+      0,
+    )
   return [...table.values()].sort(
-    (x, y) => y.pts - x.pts || y.pp - y.pc - (x.pp - x.pc) || y.pp - x.pp || y.v - x.v,
+    (x, y) =>
+      y.pts - x.pts ||
+      y.pp - y.pc - (x.pp - x.pc) ||
+      y.pp - x.pp ||
+      y.v - x.v ||
+      headToHead(y.teamId, x.teamId) - headToHead(x.teamId, y.teamId) ||
+      discipline(x.teamId) - discipline(y.teamId),
   )
 }
 
@@ -334,6 +380,8 @@ export function applySumula(mod: Modality, matchId: string, sumula: Sumula): Mod
   )
   const done = matches.find((m) => m.id === matchId)!
   const w = winnerOf(done)
+  if (!done.groupId && sumula.kind !== 'colocacao' && !w)
+    throw new Error('Partida de mata-mata precisa de vencedor (pênaltis ou set decisivo).')
   if (w && done.nextMatchId) {
     matches = matches.map((m) => (m.id === done.nextMatchId ? { ...m, [done.nextSide!]: w } : m))
   }
@@ -436,6 +484,8 @@ export function scheduleTournament(t: Tournament, notBefore?: string): Tournamen
     )
     const minAfter = prevStages.length ? Math.max(...prevStages.map(([, v]) => v)) + 1 : 0
     const teams = teamsOf(m)
+    // limpa a alocação anterior: se não couber, fica sem horário (e é sinalizado em detectConflicts)
+    m.date = m.time = m.venue = m.referee = undefined
     let placed = false
     for (let i = Math.max(minAfter, minSlot); i < days.length * SLOTS.length && !placed; i++) {
       const b = at(i)
@@ -491,5 +541,10 @@ export function detectConflicts(t: Tournament): Conflict[] {
         else if (tx.some((tm) => ty.includes(tm))) conflicts.push({ matchIds: [x.id, y.id], reason: `Time com dois jogos em ${k}` })
       }
   }
+  // partidas que a agenda não conseguiu alocar no período do torneio
+  for (const mod of t.modalities)
+    for (const m of mod.matches)
+      if (!m.bye && m.status === 'agendada' && !(m.date && m.time))
+        conflicts.push({ matchIds: [m.id], reason: 'Sem horário livre no período do torneio' })
   return conflicts
 }
