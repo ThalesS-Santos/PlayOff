@@ -90,6 +90,8 @@ interface Ctx extends State {
   generate: (tId: string, modId: string, groupCount?: number) => void
   optimize: (tId: string) => void
   transition: (tId: string, status: TournamentStatus) => void
+  /** Aplica uma alteração pura ao torneio (cadastros, RF02). */
+  edit: (tId: string, f: (t: Tournament) => Tournament) => void
   demoUsers: User[]
 }
 
@@ -155,6 +157,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             modalities: t.modalities.map((m) => (m.id === modId ? generateMatches(m, groupCount) : m)),
           }),
         ),
+      edit: update,
       optimize: (tId) => update(tId, (t) => scheduleTournament(t, new Date().toISOString().slice(0, 10))),
       transition: (tId, status) =>
         update(tId, (t) =>

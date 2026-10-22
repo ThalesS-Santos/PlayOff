@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Crest, Field, inputCls, Page, spring } from '../components/ui'
 import { generateMatches, scheduleTournament, uid } from '../lib/engine'
+import { TEAM_COLORS } from '../lib/registry'
 import { useStore } from '../lib/store'
 import type { Format, Modality, Prize, SumulaKind, Team, Tournament } from '../lib/types'
 
@@ -29,7 +30,6 @@ const COVERS: [string, string][] = [
   ['#0ea5e9', '#6366f1'],
 ]
 
-const TEAM_COLORS = ['#f43f5e', '#f59e0b', '#10b981', '#06b6d4', '#6366f1', '#a855f7', '#ec4899', '#84cc16', '#14b8a6', '#3b82f6']
 const SAMPLE_NAMES = ['Águias', 'Titãs', 'Cometas', 'Lobos', 'Vikings', 'Guerreiros', 'Tempestade', 'Relâmpago', 'Gaviões', 'Centauros', 'Jaguares', 'Netuno']
 
 interface DraftMod {

@@ -1,0 +1,97 @@
+import type { Modality, Team, Tournament } from './types'
+
+/* Cadastros do torneio (RF02): times, jogadores, técnicos e árbitros. */
+
+export const TEAM_COLORS = ['#f43f5e', '#f59e0b', '#10b981', '#06b6d4', '#6366f1', '#a855f7', '#ec4899', '#84cc16', '#14b8a6', '#3b82f6']
+
+const norm = (s: string) => s.trim().toLocaleLowerCase('pt-BR')
+
+/** Inscrições só mudam enquanto a modalidade não tem jogos gerados. */
+export const entriesOpen = (mod: Modality) => mod.matches.length === 0
+
+/** Modalidades com jogos gerados em que o time está inscrito (impedem a exclusão). */
+export function lockedModalities(t: Tournament, teamId: string) {
+  return t.modalities.filter((m) => m.teamIds.includes(teamId) && !entriesOpen(m))
+}
+
+export function validateTeam(team: Team, t: Tournament): string[] {
+  const errors: string[] = []
+  if (!team.name.trim()) errors.push('Informe o nome do time.')
+  else if (t.teams.some((x) => x.id !== team.id && norm(x.name) === norm(team.name))) errors.push('Já existe um time com esse nome.')
+  if (!/^[\p{L}\p{N}]{2,4}$/u.test(team.short)) errors.push('A sigla deve ter de 2 a 4 letras ou números.')
+  if (!team.coach.trim()) errors.push('Informe o técnico(a).')
+  const numbers = new Set<number>()
+  team.players.forEach((p, i) => {
+    const who = p.name.trim() || `Atleta ${i + 1}`
+    if (!p.name.trim()) errors.push(`Atleta ${i + 1}: informe o nome.`)
+    if (!Number.isInteger(p.number) || p.number < 0 || p.number > 99) errors.push(`${who}: número da camisa deve ser de 0 a 99.`)
+    else if (numbers.has(p.number)) errors.push(`${who}: camisa ${p.number} repetida.`)
+    numbers.add(p.number)
+  })
+  return errors
+}
+
+/**
+ * Cria ou atualiza um time e define em quais modalidades ele está inscrito.
+ * Modalidades com jogos gerados mantêm a inscrição como está.
+ */
+export function upsertTeam(t: Tournament, team: Team, modalityIds: string[]): Tournament {
+  const clean: Team = {
+    ...team,
+    name: team.name.trim(),
+    short: team.short.trim().toUpperCase(),
+    coach: team.coach.trim(),
+    players: team.players.map((p) => ({ ...p, name: p.name.trim(), nickname: p.nickname?.trim() || undefined })),
+  }
+  const teams = t.teams.some((x) => x.id === team.id) ? t.teams.map((x) => (x.id === team.id ? clean : x)) : [...t.teams, clean]
+  const modalities = t.modalities.map((m) => {
+    if (!entriesOpen(m)) return m
+    const want = modalityIds.includes(m.id)
+    const has = m.teamIds.includes(team.id)
+    if (want === has) return m
+    return want ? { ...m, teamIds: [...m.teamIds, team.id] } : { ...m, teamIds: m.teamIds.filter((x) => x !== team.id), seeds: m.seeds.filter((x) => x !== team.id) }
+  })
+  return { ...t, teams, modalities }
+}
+
+export function removeTeam(t: Tournament, teamId: string): Tournament {
+  if (lockedModalities(t, teamId).length) throw new Error('Time com jogos gerados não pode ser excluído.')
+  return {
+    ...t,
+    teams: t.teams.filter((x) => x.id !== teamId),
+    modalities: t.modalities.map((m) => ({ ...m, teamIds: m.teamIds.filter((x) => x !== teamId), seeds: m.seeds.filter((x) => x !== teamId) })),
+  }
+}
+
+/** Liga/desliga cabeça de chave (a ordem de marcação define o ranking). */
+export function toggleSeed(t: Tournament, modId: string, teamId: string): Tournament {
+  return {
+    ...t,
+    modalities: t.modalities.map((m) =>
+      m.id !== modId || !entriesOpen(m) || !m.teamIds.includes(teamId)
+        ? m
+        : { ...m, seeds: m.seeds.includes(teamId) ? m.seeds.filter((x) => x !== teamId) : [...m.seeds, teamId] },
+    ),
+  }
+}
+
+/** Partidas ainda não encerradas em que o árbitro está escalado. */
+export function refereeAssignments(t: Tournament, name: string) {
+  return t.modalities.flatMap((m) => m.matches.filter((x) => x.referee === name && x.status !== 'encerrada'))
+}
+
+export function validateReferee(name: string, t: Tournament): string | undefined {
+  if (!name.trim()) return 'Informe o nome do árbitro.'
+  if (t.referees.some((r) => norm(r) === norm(name))) return 'Árbitro já cadastrado.'
+}
+
+export function addReferee(t: Tournament, name: string): Tournament {
+  const err = validateReferee(name, t)
+  if (err) throw new Error(err)
+  return { ...t, referees: [...t.referees, name.trim()] }
+}
+
+export function removeReferee(t: Tournament, name: string): Tournament {
+  if (refereeAssignments(t, name).length) throw new Error('Árbitro escalado em partidas pendentes.')
+  return { ...t, referees: t.referees.filter((r) => r !== name) }
+}

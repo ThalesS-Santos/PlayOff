@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import { AnimatePresence, motion, useSpring, useTransform, type HTMLMotionProps } from 'motion/react'
 import { CheckCircle2, Info, TriangleAlert, X } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { STATUS_LABEL, useStore } from '../lib/store'
 import type { Team, TournamentStatus } from '../lib/types'
 
@@ -131,7 +132,8 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
-  return (
+  // portal: ancestrais animados com transform quebrariam o position: fixed
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div className="fixed inset-0 z-50 grid place-items-end sm:place-items-center sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -158,7 +160,8 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
 }
 

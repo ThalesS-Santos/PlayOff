@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CalendarRange,
   ChevronDown,
+  ClipboardList,
   Crown,
   GitFork,
   Gift,
@@ -24,6 +25,7 @@ import { useMemo, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { AccessModal } from '../components/AccessModal'
 import { Bracket } from '../components/Bracket'
+import { RegistrationsTab } from '../components/Registrations'
 import { Calendar, GroupTables, MatchRow } from '../components/Competition'
 import { SumulaModal } from '../components/SumulaModal'
 import { FavButton } from '../components/TournamentCard'
@@ -32,7 +34,7 @@ import { champion, detectConflicts, progress } from '../lib/engine'
 import { STATUS_LABEL, useStore } from '../lib/store'
 import type { Match, Modality, Team, Tournament, TournamentStatus } from '../lib/types'
 
-type Tab = 'chave' | 'partidas' | 'times' | 'premios' | 'gestao'
+type Tab = 'chave' | 'partidas' | 'times' | 'premios' | 'cadastros' | 'gestao'
 
 const NEXT: Partial<Record<TournamentStatus, { to: TournamentStatus; label: string }>> = {
   criacao: { to: 'publicado', label: 'Publicar torneio' },
@@ -73,7 +75,12 @@ function TournamentView({ t }: { t: Tournament }) {
     { id: 'partidas', label: 'Partidas', icon: <CalendarRange size={16} />, count: t.modalities.reduce((n, m) => n + m.matches.filter((x) => !x.bye).length, 0) },
     { id: 'times', label: 'Times', icon: <Shirt size={16} />, count: t.teams.length },
     { id: 'premios', label: 'Premiação', icon: <Gift size={16} /> },
-    ...(manage ? [{ id: 'gestao' as const, label: 'Gestão', icon: <Wand2 size={16} /> }] : []),
+    ...(manage
+      ? [
+          { id: 'cadastros' as const, label: 'Cadastros', icon: <ClipboardList size={16} /> },
+          { id: 'gestao' as const, label: 'Gestão', icon: <Wand2 size={16} /> },
+        ]
+      : []),
   ]
 
   return (
@@ -151,6 +158,7 @@ function TournamentView({ t }: { t: Tournament }) {
               {tab === 'partidas' && <MatchesTab t={t} onSelect={(m, md) => setSel({ m, modId: md.id })} />}
               {tab === 'times' && <TeamsTab t={t} />}
               {tab === 'premios' && <PrizesTab t={t} />}
+              {tab === 'cadastros' && <RegistrationsTab t={t} />}
               {tab === 'gestao' && <ManageTab t={t} />}
             </motion.div>
           </AnimatePresence>
