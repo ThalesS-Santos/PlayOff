@@ -9,7 +9,10 @@ import {
   Crown,
   GitFork,
   Gift,
+  Grid3x3,
   LayoutGrid,
+  List,
+  ListOrdered,
   Lock,
   MapPin,
   Pencil,
@@ -26,17 +29,18 @@ import {
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AccessModal } from '../components/AccessModal'
-import { Bracket } from '../components/Bracket'
+import { Bracket, BracketColumns } from '../components/Bracket'
 import { Calendar, GroupTables, MatchRow } from '../components/Competition'
 import { DrawModal } from '../components/DrawModal'
 import { EditTournamentModal } from '../components/EditTournament'
 import { rise, spring, stagger } from '../components/motion'
 import { RegistrationsTab } from '../components/Registrations'
+import { ScheduleGrid } from '../components/ScheduleGrid'
 import { SumulaModal } from '../components/SumulaModal'
 import { FavButton } from '../components/TournamentCard'
 import { AnimatedNumber, Button, Crest, Empty, Modal, Page, StatusBadge, Tabs } from '../components/ui'
 import { champion, detectConflicts, progress } from '../lib/engine'
-import { fmtDate } from '../lib/format'
+import { fmtDate, FORMAT_LABEL } from '../lib/format'
 import { canView } from '../lib/permissions'
 import { prizeModality, prizeWinners } from '../lib/registry'
 import { STATUS_LABEL, useStore } from '../lib/store'
@@ -249,6 +253,47 @@ function BracketTab({ t, mod, setModId, onSelect }: { t: Tournament; mod: Modali
             <div className="max-w-2xl">
               <MatchRow m={mod.matches[0]} mod={mod} teams={t.teams} onClick={() => onSelect(mod.matches[0])} />
             </div>
+          ) : mod.format === 'pontos_corridos' ? (
+            <section>
+              <h2 className="font-display mb-3 flex items-center gap-2 text-lg font-semibold">
+                <ListOrdered size={18} className="text-brand-ink" /> Pontos corridos
+                <span className="text-xs font-normal text-faint">{mod.returno ? 'turno e returno' : 'turno único'} · rodadas na aba Partidas</span>
+              </h2>
+              <div className="max-w-3xl">
+                <GroupTables mod={mod} teams={t.teams} />
+              </div>
+            </section>
+          ) : mod.format === 'dupla_eliminacao' ? (
+            <>
+              <section>
+                <h2 className="font-display mb-3 flex items-center gap-2 text-lg font-semibold">
+                  <GitFork size={18} className="text-brand-ink" /> Chave dos vencedores
+                  <span className="text-xs font-normal text-faint">quem perde aqui cai para a chave dos perdedores</span>
+                </h2>
+                <div className="rounded-3xl border border-line bg-surface/40 p-4 sm:p-6">
+                  <Bracket mod={mod} teams={t.teams} onSelect={onSelect} matches={mod.matches.filter((m) => m.bracket === 'W')} showChampion={false} />
+                </div>
+              </section>
+              <section>
+                <h2 className="font-display mb-3 flex items-center gap-2 text-lg font-semibold">
+                  <GitFork size={18} className="rotate-180 text-brand-ink" /> Chave dos perdedores
+                  <span className="text-xs font-normal text-faint">uma derrota a mais e o time está fora</span>
+                </h2>
+                <div className="rounded-3xl border border-line bg-surface/40 p-4 sm:p-6">
+                  <BracketColumns matches={mod.matches.filter((m) => m.bracket === 'L')} teams={t.teams} onSelect={onSelect} />
+                </div>
+              </section>
+              <section className="max-w-xl">
+                <h2 className="font-display mb-3 flex items-center gap-2 text-lg font-semibold">
+                  <Trophy size={18} className="text-brand-ink" /> Grande final
+                </h2>
+                {mod.matches
+                  .filter((m) => m.bracket === 'F')
+                  .map((m) => (
+                    <MatchRow key={m.id} m={m} mod={mod} teams={t.teams} onClick={() => onSelect(m)} />
+                  ))}
+              </section>
+            </>
           ) : (
             <>
               {mod.groups.length > 0 && (
@@ -289,6 +334,7 @@ function BracketTab({ t, mod, setModId, onSelect }: { t: Tournament; mod: Modali
 
 function MatchesTab({ t, onSelect }: { t: Tournament; onSelect: (m: Match, mod: Modality) => void }) {
   const [only, setOnly] = useState<'todas' | 'proximas' | 'encerradas'>('todas')
+  const [view, setView] = useState<'lista' | 'grade'>('lista')
   const conflicts = useMemo(() => {
     const map = new Map<string, string>()
     detectConflicts(t).forEach((c) => c.matchIds.forEach((id) => map.set(id, c.reason)))
@@ -309,9 +355,17 @@ function MatchesTab({ t, onSelect }: { t: Tournament; onSelect: (m: Match, mod: 
             <span className="relative">{k === 'proximas' ? 'Próximas' : k}</span>
           </button>
         ))}
-        {conflicts.size > 0 && <span className="ml-auto rounded-full bg-warn/15 px-3 py-1 text-xs font-medium text-warn">{conflicts.size} partidas em conflito</span>}
+        {conflicts.size > 0 && <span className="rounded-full bg-warn/15 px-3 py-1 text-xs font-medium text-warn">{conflicts.size} partidas em conflito</span>}
+        <div className="ml-auto flex rounded-xl bg-surface-2 p-1" role="group" aria-label="Visualização">
+          {(['lista', 'grade'] as const).map((v) => (
+            <button key={v} onClick={() => setView(v)} aria-pressed={view === v} className={clsx('flex h-7 items-center gap-1.5 rounded-lg px-3 text-xs font-medium', view === v ? 'bg-surface text-ink shadow' : 'text-muted hover:text-ink')}>
+              {v === 'lista' ? <List size={14} /> : <Grid3x3 size={14} />}
+              {v === 'lista' ? 'Lista' : 'Grade'}
+            </button>
+          ))}
+        </div>
       </div>
-      <Calendar items={items} teams={t.teams} conflicts={conflicts} onSelect={onSelect} />
+      {view === 'lista' ? <Calendar items={items} teams={t.teams} conflicts={conflicts} onSelect={onSelect} /> : <ScheduleGrid t={t} items={items} conflicts={conflicts} onSelect={onSelect} />}
     </div>
   )
 }
@@ -493,7 +547,7 @@ function ManageTab({ t }: { t: Tournament }) {
           {t.modalities.map((m) => (
             <div key={m.id} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2 text-sm">
               <span>
-                {m.sport} <span className="text-faint">· {m.teamIds.length} equipes · {m.format === 'eliminacao' ? 'Eliminação simples' : m.format === 'grupos_mata' ? 'Grupos + mata-mata' : 'Prova'}</span>
+                {m.sport} <span className="text-faint">· {m.teamIds.length} equipes · {FORMAT_LABEL[m.format]}</span>
               </span>
               <Button size="sm" variant="soft" icon={<Shuffle size={14} />} disabled={closed} onClick={() => setDrawMod(m)}>
                 Sortear

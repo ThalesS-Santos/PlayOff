@@ -46,10 +46,61 @@ function Side({ m, side, team, hovered, onHover }: { m: Match; side: 'a' | 'b'; 
   )
 }
 
-export function Bracket({ mod, teams, onSelect }: { mod: Modality; teams: Team[]; onSelect?: (m: Match) => void }) {
+function MatchCard({ m, byId, hovered, onHover, onSelect, style }: { m: Match; byId: Map<string, Team>; hovered?: string; onHover: (id?: string) => void; onSelect?: (m: Match) => void; style?: React.CSSProperties }) {
+  return (
+    <motion.button
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={softSpring}
+      whileHover={{ scale: 1.03, zIndex: 10 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={() => !m.bye && onSelect?.(m)}
+      className={clsx(
+        'overflow-hidden rounded-xl border bg-surface text-left shadow-[0_10px_30px_-18px_black]',
+        style ? 'absolute' : 'relative',
+        m.status === 'ao_vivo' ? 'border-live/60 ring-2 ring-live/20' : 'border-line',
+        m.bye && 'opacity-50',
+      )}
+      style={{ width: W, height: H, ...style }}
+    >
+      <Side m={m} side="a" team={byId.get(m.a ?? '')} hovered={hovered} onHover={onHover} />
+      <div className="h-px bg-line" />
+      <Side m={m} side="b" team={byId.get(m.b ?? '')} hovered={hovered} onHover={onHover} />
+      {m.status === 'ao_vivo' && (
+        <span className="absolute top-1 right-1.5 flex items-center gap-1 text-[9px] font-bold text-live">
+          <LiveDot />
+        </span>
+      )}
+    </motion.button>
+  )
+}
+
+/** Chave em colunas por rodada, sem árvore (chave dos perdedores da dupla eliminação). */
+export function BracketColumns({ matches, teams, onSelect }: { matches: Match[]; teams: Team[]; onSelect?: (m: Match) => void }) {
   const [hovered, setHovered] = useState<string>()
   const byId = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams])
-  const ko = mod.matches.filter((m) => !m.groupId && !m.participants)
+  const rounds: Match[][] = []
+  for (const m of matches) (rounds[m.round - 1] ??= []).push(m)
+  return (
+    <div className="scrollbar-thin -mx-4 flex gap-6 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0">
+      {rounds.map((r) => (
+        <div key={r[0].id} className="flex shrink-0 flex-col justify-around gap-4">
+          <p className="text-xs font-semibold tracking-wider text-faint uppercase">{r[0].phase}</p>
+          {[...r]
+            .sort((x, y) => x.slot - y.slot)
+            .map((m) => (
+              <MatchCard key={m.id} m={m} byId={byId} hovered={hovered} onHover={setHovered} onSelect={onSelect} />
+            ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function Bracket({ mod, teams, onSelect, matches, showChampion = true }: { mod: Modality; teams: Team[]; onSelect?: (m: Match) => void; matches?: Match[]; showChampion?: boolean }) {
+  const [hovered, setHovered] = useState<string>()
+  const byId = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams])
+  const ko = matches ?? mod.matches.filter((m) => !m.groupId && !m.participants)
   const rounds = useMemo(() => {
     const rs: Match[][] = []
     for (const m of ko) (rs[m.round - 1] ??= []).push(m)
@@ -62,7 +113,7 @@ export function Bracket({ mod, teams, onSelect }: { mod: Modality; teams: Team[]
   const height = first * unit + HEAD
   const final = rounds[rounds.length - 1][0]
   const champ = final && final.status === 'encerrada' ? byId.get(winnerOf(final) ?? '') : undefined
-  const width = rounds.length * (W + GAP_X) + 190
+  const width = rounds.length * (W + GAP_X) + (showChampion ? 190 : 0)
 
   const pos = (r: number, i: number) => ({
     x: r * (W + GAP_X),
@@ -109,7 +160,7 @@ export function Bracket({ mod, teams, onSelect }: { mod: Modality; teams: Team[]
               )
             }),
           )}
-          {final && (
+          {final && showChampion && (
             <motion.path
               d={`M${pos(rounds.length - 1, 0).x + W} ${pos(rounds.length - 1, 0).y + H / 2} h${GAP_X - 10}`}
               stroke="var(--color-brand)"
@@ -125,37 +176,12 @@ export function Bracket({ mod, teams, onSelect }: { mod: Modality; teams: Team[]
         {rounds.map((r, ri) =>
           r.map((m, i) => {
             const p = pos(ri, i)
-            return (
-              <motion.button
-                key={m.id}
-                initial={{ opacity: 0, x: -16, scale: 0.96 }}
-                animate={{ opacity: 1, x: 0, scale: 1 }}
-                transition={{ ...softSpring, delay: ri * 0.12 + i * 0.03 }}
-                whileHover={{ scale: 1.03, zIndex: 10 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => !m.bye && onSelect?.(m)}
-                className={clsx(
-                  'absolute overflow-hidden rounded-xl border bg-surface text-left shadow-[0_10px_30px_-18px_black]',
-                  m.status === 'ao_vivo' ? 'border-live/60 ring-2 ring-live/20' : 'border-line',
-                  m.bye && 'opacity-50',
-                )}
-                style={{ left: p.x, top: p.y, width: W, height: H }}
-              >
-                <Side m={m} side="a" team={byId.get(m.a ?? '')} hovered={hovered} onHover={setHovered} />
-                <div className="h-px bg-line" />
-                <Side m={m} side="b" team={byId.get(m.b ?? '')} hovered={hovered} onHover={setHovered} />
-                {m.status === 'ao_vivo' && (
-                  <span className="absolute top-1 right-1.5 flex items-center gap-1 text-[9px] font-bold text-live">
-                    <LiveDot />
-                  </span>
-                )}
-              </motion.button>
-            )
+            return <MatchCard key={m.id} m={m} byId={byId} hovered={hovered} onHover={setHovered} onSelect={onSelect} style={{ left: p.x, top: p.y }} />
           }),
         )}
 
         {/* campeão */}
-        {final && (
+        {final && showChampion && (
           <div className="absolute" style={{ left: pos(rounds.length - 1, 0).x + W + GAP_X - 6, top: pos(rounds.length - 1, 0).y - 22 }}>
             <AnimatePresence mode="wait">
               {champ ? (

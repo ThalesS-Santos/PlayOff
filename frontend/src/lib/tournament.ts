@@ -1,4 +1,4 @@
-import { applySumula, generateMatches, scheduleTournament, sumulaErrors } from './engine'
+import { applySumula, formatErrors, generateMatches, scheduleTournament, sumulaErrors } from './engine'
 import type { Sumula, Tournament, TournamentStatus } from './types'
 
 /* Ciclo de vida do torneio (diagrama de estados, RN11) e ações que dependem dele. */
@@ -31,7 +31,7 @@ export function transitionErrors(t: Tournament, to: TournamentStatus): string[] 
   }
   if (next[t.status] !== to) return [`Não é possível ir de "${STATUS_LABEL[t.status]}" para "${STATUS_LABEL[to]}".`]
   if (to === 'chaveamento') {
-    const errors = t.modalities.filter((m) => m.teamIds.length < 2).map((m) => `${m.sport}: inscreva ao menos 2 times.`)
+    const errors = t.modalities.flatMap((m) => (m.matches.length ? [] : formatErrors(m.format, m.teamIds.length).map((e) => `${m.sport}: ${e}.`)))
     if (!t.modalities.length) errors.push('Cadastre ao menos uma modalidade.')
     return errors
   }
@@ -49,15 +49,18 @@ export function transition(t: Tournament, to: TournamentStatus): Tournament {
 }
 
 /** Sorteio (ou novo sorteio) de uma modalidade, já agendando os jogos. */
-export function draw(t: Tournament, modId: string, opts?: { groupCount?: number; advance?: number }): Tournament {
+export function draw(t: Tournament, modId: string, opts?: { groupCount?: number; advance?: number; returno?: boolean }): Tournament {
   if (isClosed(t)) throw new Error('Torneio encerrado não pode ser sorteado novamente.')
   const mod = t.modalities.find((m) => m.id === modId)
   if (!mod) throw new Error('Modalidade não encontrada.')
-  if (mod.teamIds.length < 2) throw new Error(`${mod.sport}: inscreva ao menos 2 times.`)
+  const errors = formatErrors(mod.format, mod.teamIds.length)
+  if (errors.length) throw new Error(`${mod.sport}: ${errors[0]}.`)
   return scheduleTournament({
     ...t,
     status: t.status === 'publicado' || t.status === 'criacao' ? 'chaveamento' : t.status,
-    modalities: t.modalities.map((m) => (m.id === modId ? generateMatches({ ...m, advancePerGroup: opts?.advance ?? m.advancePerGroup }, opts?.groupCount) : m)),
+    modalities: t.modalities.map((m) =>
+      m.id === modId ? generateMatches({ ...m, advancePerGroup: opts?.advance ?? m.advancePerGroup, returno: opts?.returno ?? m.returno }, opts?.groupCount) : m,
+    ),
   })
 }
 

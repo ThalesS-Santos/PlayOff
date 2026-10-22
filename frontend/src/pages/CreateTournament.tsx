@@ -5,7 +5,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { spring } from '../components/motion'
 import { Button, Crest, Field, inputCls, Page } from '../components/ui'
-import { generateMatches, scheduleTournament, uid } from '../lib/engine'
+import { formatErrors, generateMatches, scheduleTournament, uid } from '../lib/engine'
+import { FORMAT_LABEL } from '../lib/format'
 import { TEAM_COLORS, validatePrize } from '../lib/registry'
 import { splitList, validateDetails } from '../lib/tournament'
 import { useStore } from '../lib/store'
@@ -41,6 +42,7 @@ interface DraftMod {
   category: 'M' | 'F' | 'Misto'
   sub: string
   format: Format
+  returno?: boolean
   teams: string[]
   seeds: string[]
 }
@@ -79,6 +81,8 @@ export default function CreateTournament() {
     if (s === 1 && !mods.length) e.push('Adicione pelo menos uma modalidade.')
     if (s === 2) mods.forEach((m) => m.teams.length < 2 && e.push(`${m.sport}: inscreva ao menos 2 equipes.`))
     if (s === 3) prizes.forEach((p, i) => validatePrize({ ...p, id: String(i) }).forEach((msg) => e.push(`Prêmio ${i + 1}: ${msg}`)))
+    // sortear na criação exige a quantidade certa de times para o formato (ex.: dupla eliminação)
+    if (s === 4 && generateNow) mods.forEach((m) => formatErrors(m.format, m.teams.length).forEach((msg) => e.push(`${m.sport}: ${msg}.`)))
     setErrors(e)
     return !e.length
   }
@@ -91,6 +95,7 @@ export default function CreateTournament() {
   }
 
   const create = () => {
+    if (!validate(4)) return
     const teams: Team[] = []
     const modalities: Modality[] = mods.map((m) => {
       const ids = m.teams.map((tn, i) => {
@@ -117,6 +122,7 @@ export default function CreateTournament() {
         groups: [],
         matches: [],
         advancePerGroup: 2,
+        returno: m.format === 'pontos_corridos' ? m.returno : undefined,
       }
     })
     let t: Tournament = {
@@ -301,7 +307,8 @@ export default function CreateTournament() {
                         {m.sport} <span className="text-faint">· {m.category}</span>
                       </span>
                       <span className="text-muted">
-                        {m.teams.length} equipes · {m.format === 'eliminacao' ? 'Eliminação' : m.format === 'grupos_mata' ? 'Grupos + mata-mata' : 'Prova'}
+                        {m.teams.length} equipes · {FORMAT_LABEL[m.format]}
+                        {m.format === 'pontos_corridos' && (m.returno ? ' (turno e returno)' : ' (turno único)')}
                       </span>
                     </li>
                   ))}
@@ -423,14 +430,22 @@ function ModalitiesStep({ mods, setMods }: { mods: DraftMod[]; setMods: (m: Draf
                     {m.kind === 'colocacao' ? (
                       <option value="prova">Prova (colocação)</option>
                     ) : (
-                      <>
-                        <option value="eliminacao">Eliminação simples</option>
-                        <option value="grupos_mata">Fase de grupos + mata-mata</option>
-                      </>
+                      (['eliminacao', 'dupla_eliminacao', 'grupos_mata', 'pontos_corridos'] as const).map((f) => (
+                        <option key={f} value={f}>
+                          {FORMAT_LABEL[f]}
+                        </option>
+                      ))
                     )}
                   </select>
                 </Field>
               </div>
+              {m.format === 'pontos_corridos' && (
+                <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-muted">
+                  <input type="checkbox" checked={!!m.returno} onChange={(e) => patch(m.id, { returno: e.target.checked })} className="size-4 accent-[var(--color-brand)]" />
+                  Turno e returno (cada dupla de times se enfrenta duas vezes)
+                </label>
+              )}
+              {m.format === 'dupla_eliminacao' && <p className="mt-3 text-xs text-faint">Dupla eliminação exige 4, 8, 16 ou 32 equipes.</p>}
             </motion.li>
           ))}
         </AnimatePresence>

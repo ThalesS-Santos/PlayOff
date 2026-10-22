@@ -4,6 +4,8 @@ import {
   champion,
   defaultGroupCount,
   detectConflicts,
+  formatErrors,
+  generateDoubleElimination,
   generateElimination,
   generateGroups,
   generateMatches,
@@ -183,6 +185,9 @@ describe('agenda (RF04)', () => {
       }
     const lastGroupDay = ms.filter((m) => m.groupId).map((m) => m.date!).sort().pop()!
     for (const m of ms.filter((x) => !x.groupId)) expect(m.date! > lastGroupDay).toBe(true)
+    // e cada fase do mata-mata (semifinal → final) em dia posterior à anterior
+    const ko = ms.filter((x) => !x.groupId && !x.bye)
+    for (const m of ko.filter((x) => x.nextMatchId)) expect(ko.find((x) => x.id === m.nextMatchId)!.date! > m.date!).toBe(true)
   })
 
   it('torneio de um dia ainda cabe, relaxando o descanso', () => {
@@ -352,6 +357,118 @@ describe('resultado travado (RN14)', () => {
     // prova (sem próxima partida nem grupo) nunca trava
     const p = generateMatches(mod({ format: 'prova', kind: 'colocacao', teamIds: ['A', 'B'] }))
     expect(resultLocked(p, { ...p.matches[0], status: 'encerrada' })).toBe(false)
+  })
+})
+
+describe('pontos corridos', () => {
+  it.each([4, 5, 6])('turno único com %i times: todos se enfrentam uma vez; campeão é o 1º', (n) => {
+    const m = generateMatches(mod({ format: 'pontos_corridos', teamIds: teams(n) }))
+    expect(m.groups).toHaveLength(1)
+    expect(m.matches).toHaveLength((n * (n - 1)) / 2)
+    expect(m.matches.every((x) => x.groupId === m.groups[0].id && x.phase.startsWith('Rodada'))).toBe(true)
+    expect(champion(m)).toBeUndefined()
+    const done = playAll(m)
+    expect(champion(done)).toBe('t1')
+    expect(placeOf(done, 2)).toEqual(['t2'])
+    expect(placeOf(done, 99)).toEqual([])
+  })
+
+  it('turno e returno: cada dupla joga duas vezes com mando invertido', () => {
+    const m = generateMatches(mod({ format: 'pontos_corridos', teamIds: teams(4), returno: true }))
+    expect(m.matches).toHaveLength(12)
+    expect(Math.max(...m.matches.map((x) => x.round))).toBe(6)
+    const ida = m.matches.find((x) => x.a === 't1' && x.b === 't2') ?? m.matches.find((x) => x.a === 't2' && x.b === 't1')!
+    expect(m.matches.some((x) => x.a === ida.b && x.b === ida.a)).toBe(true)
+  })
+
+  it('aceita empate (não é mata-mata) e agenda uma rodada por dia', () => {
+    let m = generateMatches(mod({ format: 'pontos_corridos', teamIds: teams(4) }))
+    m = applySumula(m, m.matches[0].id, win(1, 1))
+    expect(m.matches[0].status).toBe('encerrada')
+    const t: Tournament = {
+      id: 't', name: 'T', description: '', orgId: 'o', organizerId: 'u', visibility: 'publico', status: 'chaveamento',
+      startDate: '2026-11-10', endDate: '2026-11-20', city: '', venueName: '', venues: ['Q1', 'Q2'], referees: ['R1', 'R2'], cover: ['#000', '#fff'],
+      teams: [], prizes: [], favoritedBy: [], createdAt: 0, modalities: [generateMatches(mod({ format: 'pontos_corridos', teamIds: teams(6) }))],
+    }
+    const s = scheduleTournament(t)
+    expect(detectConflicts(s)).toEqual([])
+    const ms = s.modalities[0].matches
+    for (let r = 2; r <= 5; r++) {
+      const prev = ms.filter((x) => x.round === r - 1).map((x) => x.date!).sort().pop()!
+      expect(ms.filter((x) => x.round === r).every((x) => x.date! > prev)).toBe(true)
+    }
+  })
+})
+
+describe('dupla eliminação', () => {
+  it.each([4, 8, 16, 32])('%i times: 2n-1 partidas, ninguém sai com uma derrota, campeão e pódio', (n) => {
+    const m = generateMatches(mod({ format: 'dupla_eliminacao', teamIds: teams(n) }))
+    const W = m.matches.filter((x) => x.bracket === 'W')
+    const L = m.matches.filter((x) => x.bracket === 'L')
+    expect(W).toHaveLength(n - 1)
+    expect(L).toHaveLength(n - 2)
+    expect(m.matches.filter((x) => x.bracket === 'F')).toHaveLength(1)
+    // toda partida da chave principal manda o perdedor para a chave dos perdedores
+    expect(W.every((x) => x.loserNextMatchId && L.some((l) => l.id === x.loserNextMatchId))).toBe(true)
+
+    const done = playAll(m)
+    expect(done.matches.every((x) => x.status === 'encerrada')).toBe(true)
+    // cada time perde no máximo duas vezes; só o campeão termina invicto ou com uma derrota
+    const losses = new Map<string, number>()
+    for (const x of done.matches) {
+      const w = winnerOf(x)!
+      const l = w === x.a ? x.b! : x.a!
+      losses.set(l, (losses.get(l) ?? 0) + 1)
+    }
+    expect([...losses.values()].every((v) => v <= 2)).toBe(true)
+    expect(champion(done)).toBe('t1')
+    expect(losses.get('t1')).toBeUndefined()
+    expect(placeOf(done, 2)).toEqual(['t2'])
+    expect(placeOf(done, 3)).toHaveLength(1)
+  })
+
+  it('quem perde na chave principal reaparece na chave dos perdedores', () => {
+    let m = generateMatches(mod({ format: 'dupla_eliminacao', teamIds: teams(4) }))
+    const w1 = m.matches.find((x) => x.bracket === 'W' && x.round === 1)!
+    m = applySumula(m, w1.id, win(0, 3))
+    const l1 = m.matches.find((x) => x.id === w1.loserNextMatchId)!
+    expect(l1[w1.loserNextSide!]).toBe(w1.a)
+    // corrigir o resultado antes da próxima partida começar troca quem caiu
+    m = applySumula(m, w1.id, win(3, 0))
+    expect(m.matches.find((x) => x.id === w1.loserNextMatchId)![w1.loserNextSide!]).toBe(w1.b)
+  })
+
+  it('resultado trava quando a partida do perdedor já começou', () => {
+    let m = generateMatches(mod({ format: 'dupla_eliminacao', teamIds: teams(4) }))
+    const [a, b] = m.matches.filter((x) => x.bracket === 'W' && x.round === 1)
+    m = applySumula(applySumula(m, a.id, win(1, 0)), b.id, win(1, 0))
+    const l1 = m.matches.find((x) => x.id === a.loserNextMatchId)!
+    m = { ...m, matches: m.matches.map((x) => (x.id === l1.id ? { ...x, status: 'ao_vivo' as const } : x)) }
+    expect(resultLocked(m, m.matches.find((x) => x.id === a.id)!)).toBe(true)
+  })
+
+  it('agenda respeita dependências entre as chaves, sem conflitos', () => {
+    const t: Tournament = {
+      id: 't', name: 'T', description: '', orgId: 'o', organizerId: 'u', visibility: 'publico', status: 'chaveamento',
+      startDate: '2026-11-10', endDate: '2026-11-30', city: '', venueName: '', venues: ['Q1', 'Q2'], referees: ['R1', 'R2'], cover: ['#000', '#fff'],
+      teams: [], prizes: [], favoritedBy: [], createdAt: 0, modalities: [generateMatches(mod({ format: 'dupla_eliminacao', teamIds: teams(8) }))],
+    }
+    const s = scheduleTournament(t)
+    expect(detectConflicts(s)).toEqual([])
+    const ms = s.modalities[0].matches
+    const key = (x: Match) => `${x.date} ${x.time}`
+    for (const x of ms)
+      for (const to of [x.nextMatchId, x.loserNextMatchId].filter(Boolean)) expect(key(ms.find((y) => y.id === to)!) > key(x)).toBe(true)
+  })
+
+  it('quantidade de times', () => {
+    expect(formatErrors('dupla_eliminacao', 6)).toEqual(['dupla eliminação exige 4, 8, 16 ou 32 times'])
+    expect(formatErrors('dupla_eliminacao', 2)).toHaveLength(1)
+    expect(formatErrors('dupla_eliminacao', 64)).toHaveLength(1)
+    expect(formatErrors('dupla_eliminacao', 8)).toEqual([])
+    expect(formatErrors('eliminacao', 1)).toEqual(['inscreva ao menos 2 times'])
+    expect(formatErrors('pontos_corridos', 3)).toEqual([])
+    expect(() => generateDoubleElimination('m', teams(6))).toThrow(/4, 8, 16 ou 32/)
   })
 })
 

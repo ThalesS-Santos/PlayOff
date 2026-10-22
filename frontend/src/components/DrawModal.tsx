@@ -1,20 +1,27 @@
 import clsx from 'clsx'
 import { Shuffle, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
-import { defaultGroupCount, groupCountOptions } from '../lib/engine'
+import { defaultGroupCount, formatErrors, groupCountOptions } from '../lib/engine'
+import { FORMAT_LABEL } from '../lib/format'
 import { useStore } from '../lib/store'
 import type { Modality, Tournament } from '../lib/types'
 import { Button, Modal } from './ui'
 
-const FORMAT_LABEL: Record<Modality['format'], string> = {
-  eliminacao: 'Eliminação simples',
-  grupos_mata: 'Fase de grupos + mata-mata',
-  prova: 'Prova (colocação)',
-}
-
-/** Sorteio de uma modalidade: escolhe nº de grupos e classificados (RF03). */
+/** Sorteio de uma modalidade: nº de grupos e classificados, ou turno/returno (RF03). */
 export function DrawModal({ t, mod, onClose }: { t: Tournament; mod: Modality | null; onClose: () => void }) {
   return <Modal open={!!mod} onClose={onClose} title={`Sortear ${mod?.sport ?? ''}`}>{mod && <DrawForm key={mod.id} t={t} mod={mod} onClose={onClose} />}</Modal>
+}
+
+function Choice<T extends string | number>({ value, current, onPick, disabled, children }: { value: T; current: T; onPick: (v: T) => void; disabled?: boolean; children: React.ReactNode }) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={() => onPick(value)}
+      className={clsx('h-10 min-w-10 rounded-xl px-3 text-sm font-medium transition-colors disabled:opacity-40', value === current ? 'bg-brand text-white' : 'bg-surface-2 text-muted hover:text-ink')}
+    >
+      {children}
+    </button>
+  )
 }
 
 function DrawForm({ t, mod, onClose }: { t: Tournament; mod: Modality; onClose: () => void }) {
@@ -23,19 +30,29 @@ function DrawForm({ t, mod, onClose }: { t: Tournament; mod: Modality; onClose: 
   const options = groupCountOptions(n)
   const [groups, setGroups] = useState(Math.min(mod.groupCount ?? defaultGroupCount(n), options[options.length - 1] ?? 1))
   const [advance, setAdvance] = useState(mod.advancePerGroup ?? 2)
+  const [returno, setReturno] = useState(!!mod.returno)
   const played = mod.matches.filter((m) => !m.bye && m.status !== 'agendada').length
   const isGroups = mod.format === 'grupos_mata'
+  const isLeague = mod.format === 'pontos_corridos'
   const adv = groups === 1 ? 2 : advance
   const sizes = Array.from({ length: groups }, (_, i) => Math.floor(n / groups) + (i < n % groups ? 1 : 0))
+  const problems = formatErrors(mod.format, n)
 
   const run = () => {
-    if (!generate(t.id, mod.id, isGroups ? { groupCount: groups, advance: adv } : undefined)) return
+    const opts = isGroups ? { groupCount: groups, advance: adv } : isLeague ? { returno } : undefined
+    if (!generate(t.id, mod.id, opts)) return
     toast({ title: 'Chave sorteada!', body: `${mod.sport}: jogos gerados e agendados.` })
     onClose()
   }
 
-  if (n < 2) return <p className="text-sm text-muted">Inscreva ao menos 2 times nesta modalidade (aba Cadastros) para sortear.</p>
+  if (problems.length)
+    return (
+      <p className="text-sm text-muted">
+        {FORMAT_LABEL[mod.format]} com {n} time(s): <b className="text-warn">{problems[0]}</b>. Ajuste as inscrições na aba Cadastros.
+      </p>
+    )
 
+  const rounds = n % 2 ? n : n - 1
   return (
     <div>
       <p className="text-sm text-muted">
@@ -47,29 +64,44 @@ function DrawForm({ t, mod, onClose }: { t: Tournament; mod: Modality; onClose: 
           <p className="mt-5 mb-2 text-sm font-medium text-muted">Número de grupos</p>
           <div className="flex flex-wrap gap-2">
             {options.map((g) => (
-              <button key={g} onClick={() => setGroups(g)} className={clsx('h-10 min-w-10 rounded-xl px-3 text-sm font-medium transition-colors', g === groups ? 'bg-brand text-white' : 'bg-surface-2 text-muted hover:text-ink')}>
+              <Choice key={g} value={g} current={groups} onPick={setGroups}>
                 {g}
-              </button>
+              </Choice>
             ))}
           </div>
           <p className="mt-2 text-xs text-faint">Grupos de {[...new Set(sizes)].sort().join(' e ')} times</p>
 
           <p className="mt-5 mb-2 text-sm font-medium text-muted">Classificados por grupo</p>
           <div className="flex gap-2">
-            {[1, 2].map((a) => (
-              <button
-                key={a}
-                disabled={groups === 1}
-                onClick={() => setAdvance(a)}
-                className={clsx('h-10 rounded-xl px-4 text-sm font-medium transition-colors disabled:opacity-40', a === adv ? 'bg-brand text-white' : 'bg-surface-2 text-muted hover:text-ink')}
-              >
-                {a === 1 ? 'Só o 1º' : '1º e 2º'}
-              </button>
-            ))}
+            <Choice value={1} current={adv} onPick={setAdvance} disabled={groups === 1}>
+              Só o 1º
+            </Choice>
+            <Choice value={2} current={adv} onPick={setAdvance}>
+              1º e 2º
+            </Choice>
           </div>
           <p className="mt-2 text-xs text-faint">{groups * adv} times avançam ao mata-mata{groups === 1 ? ' (grupo único: 1º e 2º fazem a final)' : ''}.</p>
         </>
       )}
+
+      {isLeague && (
+        <>
+          <p className="mt-5 mb-2 text-sm font-medium text-muted">Disputa</p>
+          <div className="flex gap-2">
+            <Choice value="turno" current={returno ? 'returno' : 'turno'} onPick={() => setReturno(false)}>
+              Turno único
+            </Choice>
+            <Choice value="returno" current={returno ? 'returno' : 'turno'} onPick={() => setReturno(true)}>
+              Turno e returno
+            </Choice>
+          </div>
+          <p className="mt-2 text-xs text-faint">
+            {rounds * (returno ? 2 : 1)} rodadas, {(n * (n - 1)) / (returno ? 1 : 2)} jogos. Campeão: 1º colocado.
+          </p>
+        </>
+      )}
+
+      {mod.format === 'dupla_eliminacao' && <p className="mt-4 text-xs text-faint">Cada time só é eliminado ao perder duas vezes: chave dos vencedores, chave dos perdedores e grande final.</p>}
 
       {played > 0 && (
         <p className="mt-5 flex items-start gap-2 rounded-xl bg-warn/10 p-3 text-sm text-warn">

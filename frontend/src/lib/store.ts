@@ -24,7 +24,7 @@ export interface Ctx extends State {
   /* As ações devolvem true quando aplicadas; regra violada ou falta de permissão vira aviso. */
   registerSumula: (tId: string, modId: string, matchId: string, s: Sumula) => boolean
   saveLive: (tId: string, modId: string, matchId: string, s: Sumula) => boolean
-  generate: (tId: string, modId: string, opts?: { groupCount?: number; advance?: number }) => boolean
+  generate: (tId: string, modId: string, opts?: { groupCount?: number; advance?: number; returno?: boolean }) => boolean
   optimize: (tId: string) => boolean
   transition: (tId: string, status: TournamentStatus) => boolean
   /** Aplica uma alteração pura ao torneio. */

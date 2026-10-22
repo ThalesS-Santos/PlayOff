@@ -1,7 +1,15 @@
 import { setsWon } from './engine'
-import type { Match } from './types'
+import type { Format, Match } from './types'
 
-/* Formatação para exibição (datas, tempos de prova, placares). */
+/* Formatação para exibição (datas, tempos de prova, placares, formatos). */
+
+export const FORMAT_LABEL: Record<Format, string> = {
+  eliminacao: 'Eliminação simples',
+  dupla_eliminacao: 'Dupla eliminação',
+  grupos_mata: 'Fase de grupos + mata-mata',
+  pontos_corridos: 'Pontos corridos',
+  prova: 'Prova (colocação)',
+}
 
 export function fmtDate(d?: string, opts: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short' }) {
   if (!d) return '—'

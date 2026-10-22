@@ -34,7 +34,7 @@ export interface Team {
 /** Súmula de pontos (futebol e afins), de set (vôlei e afins) ou de colocação (natação e afins) */
 export type SumulaKind = 'pontos' | 'set' | 'colocacao'
 
-export type Format = 'eliminacao' | 'grupos_mata' | 'prova'
+export type Format = 'eliminacao' | 'dupla_eliminacao' | 'grupos_mata' | 'pontos_corridos' | 'prova'
 
 export type TournamentStatus =
   | 'criacao'
@@ -74,6 +74,13 @@ export interface Match {
   participants?: string[]
   nextMatchId?: string
   nextSide?: 'a' | 'b'
+  /** dupla eliminação: chave dos vencedores (W), dos perdedores (L) ou grande final (F) */
+  bracket?: 'W' | 'L' | 'F'
+  /** dupla eliminação: para onde vai quem perde esta partida */
+  loserNextMatchId?: string
+  loserNextSide?: 'a' | 'b'
+  /** ordem de dependência para a agenda, quando a rodada não basta (dupla eliminação) */
+  stage?: number
   /** classificado de grupo que ocupará o lado A/B no mata-mata */
   sourceA?: { groupId: string; place: number }
   sourceB?: { groupId: string; place: number }
@@ -109,6 +116,8 @@ export interface Modality {
   advancePerGroup?: number
   /** nº de grupos escolhido no sorteio (padrão: calculado pelo nº de times) */
   groupCount?: number
+  /** pontos corridos: turno e returno (cada dupla de times se enfrenta duas vezes) */
+  returno?: boolean
   /** espaços adequados à modalidade (ex.: natação só na piscina); padrão: todos do torneio */
   venues?: string[]
 }

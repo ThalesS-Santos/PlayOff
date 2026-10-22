@@ -240,6 +240,89 @@ export function generateProva(modId: string, teamIds: string[]): Match[] {
   ]
 }
 
+/* ───────────────────────── pontos corridos ───────────────────────── */
+
+/**
+ * Liga em que todos se enfrentam (turno), ou duas vezes com mando invertido (turno e
+ * returno). Um único "grupo" guarda a classificação; o campeão é o 1º colocado.
+ */
+export function generatePontosCorridos(modId: string, teamIds: string[], returno = false): { groups: Group[]; matches: Match[] } {
+  const group: Group = { id: `${modId}-liga`, name: 'Classificação', teamIds: [...teamIds] }
+  const turno = roundRobin(teamIds)
+  const rounds = returno ? [...turno, ...turno.map((r) => r.map(([a, b]) => [b, a] as [string, string]))] : turno
+  const matches = rounds.flatMap((pairs, r) =>
+    pairs.map(([a, b], i): Match => ({ id: `${group.id}-r${r + 1}-${i}`, phase: `Rodada ${r + 1}`, round: r + 1, slot: i, groupId: group.id, a, b, status: 'agendada' })),
+  )
+  return { groups: [group], matches }
+}
+
+/* ───────────────────────── dupla eliminação ───────────────────────── */
+
+const isPow2 = (n: number) => n >= 1 && (n & (n - 1)) === 0
+
+/**
+ * Chave dos vencedores + chave dos perdedores + grande final: cada time só é
+ * eliminado ao perder duas vezes. Exige 4, 8, 16 ou 32 times (sem byes).
+ */
+export function generateDoubleElimination(modId: string, seeds: string[]): Match[] {
+  const n = seeds.length
+  if (!isPow2(n) || n < 4 || n > 32) throw new Error('Dupla eliminação exige 4, 8, 16 ou 32 times.')
+  const k = Math.log2(n)
+  const gfId = `${modId}-gf`
+
+  // chave dos vencedores: a mesma árvore da eliminação simples
+  const winners = generateElimination(modId, seeds).map((m): Match => ({
+    ...m,
+    bracket: 'W',
+    phase: m.round === k ? 'Final dos vencedores' : `Vencedores · R${m.round}`,
+    ...(m.round > 1 ? { placeholderA: `Venc. V${m.round - 1}-${m.slot * 2 + 1}`, placeholderB: `Venc. V${m.round - 1}-${m.slot * 2 + 2}` } : {}),
+    ...(m.round === k ? { nextMatchId: gfId, nextSide: 'a' as const } : {}),
+  }))
+  const w = (r: number, i: number) => winners.find((m) => m.round === r && m.slot === i)!
+
+  // chave dos perdedores: 2k-2 rodadas; nas pares entram os perdedores da chave principal
+  const losers: Match[] = []
+  const lid = (j: number, i: number) => `${modId}-l${j}-${i}`
+  const lRounds = 2 * k - 2
+  let size = n / 4
+  for (let j = 1; j <= lRounds; j++) {
+    if (j > 1 && j % 2 === 1) size /= 2
+    for (let i = 0; i < size; i++) {
+      const m: Match = { id: lid(j, i), phase: j === lRounds ? 'Final dos perdedores' : `Perdedores · R${j}`, round: j, slot: i, bracket: 'L', status: 'agendada' }
+      if (j === lRounds) Object.assign(m, { nextMatchId: gfId, nextSide: 'b' })
+      else Object.assign(m, j % 2 === 1 ? { nextMatchId: lid(j + 1, i), nextSide: 'a' } : { nextMatchId: lid(j + 1, Math.floor(i / 2)), nextSide: i % 2 ? 'b' : 'a' })
+      if (j === 1) Object.assign(m, { placeholderA: `Perd. V1-${i * 2 + 1}`, placeholderB: `Perd. V1-${i * 2 + 2}` })
+      else if (j % 2 === 0) {
+        // perdedores da rodada r da chave principal, em ordem invertida (evita revanche imediata)
+        const r = j / 2 + 1
+        const src = w(r, size - 1 - i)
+        Object.assign(src, { loserNextMatchId: m.id, loserNextSide: 'b' })
+        Object.assign(m, { placeholderA: `Venc. P${j - 1}-${i + 1}`, placeholderB: `Perd. V${r}-${size - i}` })
+      } else Object.assign(m, { placeholderA: `Venc. P${j - 1}-${i * 2 + 1}`, placeholderB: `Venc. P${j - 1}-${i * 2 + 2}` })
+      losers.push(m)
+    }
+  }
+  winners.filter((m) => m.round === 1).forEach((m) => Object.assign(m, { loserNextMatchId: lid(1, Math.floor(m.slot / 2)), loserNextSide: m.slot % 2 ? 'b' : 'a' }))
+
+  const gf: Match = { id: gfId, phase: 'Grande final', round: 1, slot: 0, bracket: 'F', status: 'agendada', placeholderA: 'Campeão dos vencedores', placeholderB: 'Campeão dos perdedores' }
+  const all = [...winners, ...losers, gf]
+
+  // estágio de agenda = 1 + maior estágio entre as partidas que alimentam esta
+  const feeders = new Map<string, Match[]>()
+  for (const m of all)
+    for (const to of [m.nextMatchId, m.loserNextMatchId]) if (to) feeders.set(to, [...(feeders.get(to) ?? []), m])
+  const stageOf = (m: Match): number => m.stage ?? (m.stage = 1 + Math.max(0, ...(feeders.get(m.id) ?? []).map(stageOf)))
+  all.forEach(stageOf)
+  return all
+}
+
+/** Problemas de quantidade de times para o formato escolhido. */
+export function formatErrors(format: Modality['format'], teams: number): string[] {
+  if (teams < 2) return ['inscreva ao menos 2 times']
+  if (format === 'dupla_eliminacao' && (!isPow2(teams) || teams < 4 || teams > 32)) return ['dupla eliminação exige 4, 8, 16 ou 32 times']
+  return []
+}
+
 /** Sugestão de nº de grupos: grupos de 3 a 5 times. */
 export function defaultGroupCount(teams: number) {
   if (teams <= 5) return 1
@@ -262,6 +345,8 @@ export function generateMatches(mod: Modality, groupCount?: number): Modality {
     const { groups, matches } = generateGroups(mod.id, seeds, count, advance)
     return { ...mod, groupCount: count, groups, matches }
   }
+  if (mod.format === 'pontos_corridos') return { ...mod, ...generatePontosCorridos(mod.id, seeds, mod.returno) }
+  if (mod.format === 'dupla_eliminacao') return { ...mod, groups: [], matches: generateDoubleElimination(mod.id, seeds) }
   return { ...mod, groups: [], matches: generateElimination(mod.id, seeds) }
 }
 
@@ -419,9 +504,9 @@ export function sumulaErrors(s: Sumula, m?: Match): string[] {
 export function resultLocked(mod: Modality, m: Match): boolean {
   if (m.status !== 'encerrada' || m.bye) return false
   const started = (x: Match) => x.status !== 'agendada'
-  if (m.nextMatchId) return mod.matches.some((x) => x.id === m.nextMatchId && started(x) && !x.bye)
   if (m.groupId) return mod.matches.some((x) => !x.groupId && !x.bye && started(x))
-  return false
+  // a próxima partida de quem venceu e, na dupla eliminação, a de quem perdeu
+  return mod.matches.some((x) => (x.id === m.nextMatchId || x.id === m.loserNextMatchId) && started(x) && !x.bye)
 }
 
 /** Registra súmula, encerra a partida e propaga o vencedor pela chave. */
@@ -443,6 +528,11 @@ export function applySumula(mod: Modality, matchId: string, sumula: Sumula): Mod
   if (w && done.nextMatchId) {
     matches = matches.map((m) => (m.id === done.nextMatchId ? { ...m, [done.nextSide!]: w } : m))
   }
+  // dupla eliminação: quem perde na chave dos vencedores cai para a dos perdedores
+  if (w && done.loserNextMatchId) {
+    const l = w === done.a ? done.b : done.a
+    matches = matches.map((m) => (m.id === done.loserNextMatchId ? { ...m, [done.loserNextSide!]: l } : m))
+  }
   if (done.groupId) {
     const group = mod.groups.find((g) => g.id === done.groupId)!
     const groupDone = matches.filter((m) => m.groupId === group.id).every((m) => m.status === 'encerrada')
@@ -460,12 +550,7 @@ export function applySumula(mod: Modality, matchId: string, sumula: Sumula): Mod
 }
 
 export function champion(mod: Modality): string | undefined {
-  if (mod.format === 'prova') {
-    const m = mod.matches[0]
-    return m && m.status === 'encerrada' ? ranking(m)[0]?.teamId : undefined
-  }
-  const final = mod.matches.find((m) => !m.groupId && !m.nextMatchId)
-  return final && final.status === 'encerrada' ? winnerOf(final) : undefined
+  return placeOf(mod, 1)[0]
 }
 
 /**
@@ -478,6 +563,13 @@ export function placeOf(mod: Modality, place: number): string[] {
     const id = m && m.status === 'encerrada' ? ranking(m)[place - 1]?.teamId : undefined
     return id ? [id] : []
   }
+  if (mod.format === 'pontos_corridos') {
+    // liga: vale a classificação final, depois da última rodada
+    const group = mod.groups[0]
+    if (!group || !mod.matches.length || mod.matches.some((m) => m.status !== 'encerrada')) return []
+    const id = standings(group, mod.matches)[place - 1]?.teamId
+    return id ? [id] : []
+  }
   const final = mod.matches.find((m) => !m.groupId && !m.nextMatchId)
   if (!final || final.status !== 'encerrada') return []
   const loser = (m: Match) => {
@@ -487,7 +579,8 @@ export function placeOf(mod: Modality, place: number): string[] {
   if (place === 1) return [winnerOf(final)].filter(Boolean) as string[]
   if (place === 2) return [loser(final)].filter(Boolean) as string[]
   if (place === 3) {
-    const semis = mod.matches.filter((m) => m.nextMatchId === final.id)
+    // dupla eliminação: 3º é quem perdeu a final dos perdedores
+    const semis = mod.matches.filter((m) => m.nextMatchId === final.id && m.bracket !== 'W')
     return semis.map(loser).filter(Boolean) as string[]
   }
   return []
@@ -514,7 +607,7 @@ function daysBetween(start: string, end: string) {
   return out
 }
 
-const stageKey = (m: Match) => (m.groupId ? m.round : 100 + m.round)
+const stageKey = (m: Match) => (m.groupId ? m.round : 100 + (m.stage ?? m.round))
 
 /**
  * Heurística gulosa: aloca cada partida no primeiro horário viável sem conflito de

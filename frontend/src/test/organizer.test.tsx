@@ -4,7 +4,11 @@ import type { State } from '../lib/state'
 import { dialog, ORGANIZER, renderApp, saved, savedTournament } from './utils'
 
 /** A semifinal do futsal que está ao vivo na demonstração (Raposas x Falcões). */
-const liveMatch = () => screen.getAllByText('AO VIVO')[0].closest('button')!
+const liveMatch = async () => {
+  // espera a lista de partidas (o banner ao vivo da aba anterior pode ainda estar saindo)
+  const list = (await screen.findByRole('button', { name: 'todas' })).closest('div')!.parentElement!
+  return within(list).getAllByText('AO VIVO')[0].closest('button')!
+}
 const openTab = async (ue: ReturnType<typeof renderApp>['ue'], name: RegExp) => ue.click(await screen.findByRole('button', { name }))
 const matchOf = (tId: string, pred: (m: State['tournaments'][number]['modalities'][number]['matches'][number]) => boolean, modIdx = 0) =>
   savedTournament(tId).modalities[modIdx].matches.find(pred)!
@@ -13,7 +17,7 @@ describe('súmula de pontos (futsal)', () => {
   it('mata-mata empatado exige pênaltis; depois o vencedor avança para a final', async () => {
     const { ue } = renderApp('/torneios/t1', ORGANIZER)
     await openTab(ue, /Partidas/)
-    await ue.click(liveMatch())
+    await ue.click(await liveMatch())
     // placar 2 x 2 salvo ao vivo; mexe nos contadores e volta
     await ue.click(dialog().getAllByRole('button', { name: 'Aumentar' })[0])
     await ue.click(dialog().getAllByRole('button', { name: 'Diminuir' })[0])
@@ -33,7 +37,7 @@ describe('súmula de pontos (futsal)', () => {
   it('cartões: adiciona, remove e salva ao vivo', async () => {
     const { ue } = renderApp('/torneios/t1', ORGANIZER)
     await openTab(ue, /Partidas/)
-    await ue.click(liveMatch())
+    await ue.click(await liveMatch())
     await ue.selectOptions(dialog().getByLabelText('Time'), dialog().getByLabelText('Time').querySelectorAll('option')[1])
     await ue.clear(dialog().getByLabelText('Minuto'))
     await ue.type(dialog().getByLabelText('Minuto'), '12')
@@ -129,7 +133,7 @@ describe('gestão do torneio', () => {
     expect(screen.getByRole('button', { name: /Otimizar agenda/ })).toBeDisabled()
 
     await openTab(ue, /Partidas/)
-    await ue.click(liveMatch())
+    await ue.click(await liveMatch())
     expect(dialog().getByText(/Súmulas são registradas com o chaveamento definido/)).toBeInTheDocument()
   })
 
@@ -214,7 +218,7 @@ describe('sorteio e ciclo de vida', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Beach Tennis: inscreva ao menos 2 times.')
     await openTab(ue, /Chaveamento/)
     await ue.click(screen.getByRole('button', { name: /Sortear e gerar jogos/ }))
-    expect(dialog().getByText(/Inscreva ao menos 2 times/)).toBeInTheDocument()
+    expect(dialog().getByText(/inscreva ao menos 2 times/i)).toBeInTheDocument()
   })
 
   it('grupos: escolhe nº de grupos e classificados; avisa resultados descartados', async () => {

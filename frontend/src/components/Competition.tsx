@@ -11,10 +11,11 @@ import { Crest, LiveDot } from './ui'
 
 export function GroupTables({ mod, teams }: { mod: Modality; teams: Team[] }) {
   const byId = new Map(teams.map((t) => [t.id, t]))
-  // grupo único sempre leva os dois primeiros à final
-  const adv = mod.groups.length === 1 ? 2 : (mod.advancePerGroup ?? 2)
+  const league = mod.format === 'pontos_corridos'
+  // liga: só o 1º é campeão; grupo único leva os dois primeiros à final
+  const adv = league ? 1 : mod.groups.length === 1 ? 2 : (mod.advancePerGroup ?? 2)
   return (
-    <motion.div variants={stagger} initial="hidden" animate="show" className="grid gap-4 lg:grid-cols-2">
+    <motion.div variants={stagger} initial="hidden" animate="show" className={clsx('grid gap-4', !league && 'lg:grid-cols-2')}>
       {mod.groups.map((g) => {
         const rows = standings(g, mod.matches)
         return (
@@ -57,7 +58,7 @@ export function GroupTables({ mod, teams }: { mod: Modality; teams: Team[] }) {
               </tbody>
             </table>
             <p className="flex items-center gap-1.5 border-t border-line/50 px-4 py-2 text-[11px] text-faint">
-              <span className="size-1.5 rounded-full bg-ok" /> Top {adv} avançam ao mata-mata
+              <span className="size-1.5 rounded-full bg-ok" /> {league ? 'O 1º colocado é o campeão' : `Top ${adv} avançam ao mata-mata`}
             </p>
           </motion.div>
         )
