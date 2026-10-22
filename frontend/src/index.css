@@ -1,0 +1,102 @@
+@import 'tailwindcss';
+
+/* Matiz da organização (RF06) — alterado em tempo de execução e animado */
+@property --brand-h {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 285;
+}
+
+:root {
+  --brand-h: 285;
+  color-scheme: dark;
+  transition: --brand-h 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@theme inline {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', ui-sans-serif, sans-serif;
+
+  --color-bg: oklch(0.15 0.012 var(--brand-h));
+  --color-surface: oklch(0.2 0.016 var(--brand-h));
+  --color-surface-2: oklch(0.245 0.02 var(--brand-h));
+  --color-line: oklch(0.32 0.02 var(--brand-h) / 0.7);
+  --color-ink: oklch(0.97 0.005 var(--brand-h));
+  --color-muted: oklch(0.72 0.02 var(--brand-h));
+  --color-faint: oklch(0.55 0.02 var(--brand-h));
+
+  --color-brand: oklch(0.68 0.2 var(--brand-h));
+  --color-brand-soft: oklch(0.68 0.2 var(--brand-h) / 0.16);
+  --color-brand-ink: oklch(0.85 0.12 var(--brand-h));
+  --color-accent: oklch(0.72 0.19 calc(var(--brand-h) + 70));
+
+  --color-live: oklch(0.68 0.22 25);
+  --color-ok: oklch(0.75 0.16 155);
+  --color-warn: oklch(0.82 0.15 80);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.6s ease;
+}
+
+::selection {
+  background: var(--color-brand-soft);
+}
+
+.font-display {
+  letter-spacing: -0.02em;
+}
+
+/* Fundo com brilho que acompanha a cor da organização */
+.app-glow {
+  background:
+    radial-gradient(60rem 30rem at 10% -10%, oklch(0.68 0.2 var(--brand-h) / 0.18), transparent 60%),
+    radial-gradient(50rem 30rem at 110% 0%, oklch(0.72 0.19 calc(var(--brand-h) + 70) / 0.12), transparent 60%);
+}
+
+.glass {
+  background: oklch(0.2 0.016 var(--brand-h) / 0.6);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+}
+
+.grid-dots {
+  background-image: radial-gradient(oklch(1 0 0 / 0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
