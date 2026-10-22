@@ -1,23 +1,28 @@
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
-import { Crown, Gavel, Lock, Pencil, Plus, Shirt, Trash2, UserPlus, X } from 'lucide-react'
+import { Crown, Gavel, Gift, Lock, Pencil, Plus, Shirt, Trash2, Trophy, UserPlus, X } from 'lucide-react'
 import { useState } from 'react'
 import { uid } from '../lib/engine'
 import {
   addReferee,
   entriesOpen,
   lockedModalities,
+  prizeModality,
+  prizeWinners,
   refereeAssignments,
+  removePrize,
   removeReferee,
   removeTeam,
   TEAM_COLORS,
   toggleSeed,
+  upsertPrize,
   upsertTeam,
+  validatePrize,
   validateReferee,
   validateTeam,
 } from '../lib/registry'
 import { useStore } from '../lib/store'
-import type { Team, Tournament } from '../lib/types'
+import type { Prize, Team, Tournament } from '../lib/types'
 import { Button, Crest, Empty, Field, inputCls, Modal, rise, stagger } from './ui'
 
 /** Aba de cadastros do organizador (RF02): times, jogadores, técnicos e árbitros. */
@@ -100,6 +105,8 @@ export function RegistrationsTab({ t }: { t: Tournament }) {
       </section>
 
       <RefereesPanel t={t} />
+
+      <PrizesPanel t={t} />
 
       <TeamEditor key={editing?.id} t={t} team={editing} onClose={() => setEditing(null)} />
 
@@ -272,6 +279,145 @@ function TeamEditor({ t, team, onClose }: { t: Tournament; team: Team | null; on
         <Button onClick={save}>{isNew ? 'Cadastrar time' : 'Salvar'}</Button>
       </div>
     </Modal>
+  )
+}
+
+/* ───────────── Prêmios ───────────── */
+
+function PrizesPanel({ t }: { t: Tournament }) {
+  const { edit, toast } = useStore()
+  const [editing, setEditing] = useState<Prize | null>(null)
+  const isNew = !!editing && !t.prizes.some((p) => p.id === editing.id)
+  const [errors, setErrors] = useState<string[]>([])
+
+  const open = (p: Prize) => {
+    setErrors([])
+    setEditing(p)
+  }
+  const save = () => {
+    if (!editing) return
+    const errs = validatePrize(editing)
+    setErrors(errs)
+    if (errs.length) return
+    edit(t.id, (x) => upsertPrize(x, editing))
+    toast({ title: isNew ? 'Prêmio cadastrado' : 'Prêmio atualizado', body: editing.name.trim() })
+    setEditing(null)
+  }
+  const set = (p: Partial<Prize>) => editing && setEditing({ ...editing, ...p })
+
+  return (
+    <section className="lg:col-span-2">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="font-display flex items-center gap-2 text-lg font-semibold">
+          <Gift size={18} className="text-brand-ink" /> Prêmios <span className="text-sm font-normal text-faint">{t.prizes.length}</span>
+        </h2>
+        <Button variant="soft" icon={<Plus size={16} />} onClick={() => open({ id: uid('pz'), name: '', kind: 'coletivo', place: Math.min(3, t.prizes.length + 1), modalityId: t.modalities.length > 1 ? t.modalities[0].id : undefined })}>
+          Novo prêmio
+        </Button>
+      </div>
+      {!t.prizes.length ? (
+        <p className="rounded-2xl border border-dashed border-line px-4 py-6 text-center text-sm text-faint">Nenhum prêmio cadastrado.</p>
+      ) : (
+        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {t.prizes.map((p) => {
+            const mod = prizeModality(t, p)
+            const winners = prizeWinners(t, p)
+            return (
+              <li key={p.id} className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-warn/15 text-warn">
+                  <Trophy size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{p.name}</p>
+                  <p className="truncate text-xs text-muted">
+                    {p.kind === 'individual' ? 'Individual' : `${p.place}º lugar`} · {mod ? mod.sport : 'Geral'}
+                    {p.value != null && ` · R$ ${p.value.toLocaleString('pt-BR')}`}
+                  </p>
+                  <p className="truncate text-xs text-ok">{p.kind === 'individual' ? (p.awardee ? `Entregue a ${p.awardee}` : '') : winners.map((w) => w.name).join(' e ')}</p>
+                </div>
+                <button onClick={() => open(p)} className="rounded-lg p-1.5 text-faint hover:bg-surface-2 hover:text-ink" aria-label={`Editar ${p.name}`}>
+                  <Pencil size={14} />
+                </button>
+                <button
+                  onClick={() => {
+                    edit(t.id, (x) => removePrize(x, p.id))
+                    toast({ title: 'Prêmio removido', body: p.name, tone: 'info' })
+                  }}
+                  className="rounded-lg p-1.5 text-faint hover:bg-surface-2 hover:text-live"
+                  aria-label={`Excluir ${p.name}`}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      <p className="mt-3 text-xs text-faint">Prêmios coletivos são entregues automaticamente ao fim da modalidade (sem disputa de 3º lugar, os semifinalistas dividem o 3º).</p>
+
+      <Modal open={!!editing} onClose={() => setEditing(null)} title={isNew ? 'Novo prêmio' : 'Editar prêmio'}>
+        {editing && (
+          <div className="space-y-4">
+            <Field label="Nome">
+              <input className={inputCls} value={editing.name} autoFocus onChange={(e) => set({ name: e.target.value })} placeholder="Ex.: Troféu de campeão, Artilheiro" />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Tipo">
+                <select className={inputCls} value={editing.kind} onChange={(e) => set({ kind: e.target.value as Prize['kind'] })}>
+                  <option value="coletivo">Coletivo (time)</option>
+                  <option value="individual">Individual (atleta)</option>
+                </select>
+              </Field>
+              <Field label="Modalidade">
+                <select className={inputCls} value={editing.modalityId ?? ''} onChange={(e) => set({ modalityId: e.target.value || undefined })}>
+                  <option value="">Geral</option>
+                  {t.modalities.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.sport} · {m.category}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {editing.kind === 'coletivo' && (
+                <Field label="Colocação">
+                  <select className={inputCls} value={editing.place} onChange={(e) => set({ place: Number(e.target.value) })}>
+                    {[1, 2, 3].map((n) => (
+                      <option key={n} value={n}>
+                        {n}º lugar
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              <Field label="Valor (R$)">
+                <input type="number" min={0} className={inputCls} value={editing.value ?? ''} onChange={(e) => set({ value: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="Opcional" />
+              </Field>
+            </div>
+            {editing.kind === 'individual' && (
+              <Field label="Contemplado(a)" hint="Preencha quando o prêmio for definido.">
+                <input className={inputCls} list="prize-athletes" value={editing.awardee ?? ''} onChange={(e) => set({ awardee: e.target.value })} placeholder="Nome do atleta" />
+                <datalist id="prize-athletes">
+                  {t.teams.flatMap((tm) => tm.players.map((pl) => <option key={pl.id} value={`${pl.name} (${tm.name})`} />))}
+                </datalist>
+              </Field>
+            )}
+            {errors.length > 0 && (
+              <ul className="space-y-1 rounded-xl bg-live/10 p-3 text-sm text-live" role="alert">
+                {errors.map((e) => (
+                  <li key={e}>• {e}</li>
+                ))}
+              </ul>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setEditing(null)}>
+                Cancelar
+              </Button>
+              <Button onClick={save}>{isNew ? 'Cadastrar prêmio' : 'Salvar'}</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </section>
   )
 }
 

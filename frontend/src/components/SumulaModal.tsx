@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { ranking, setsWon, winnerOf } from '../lib/engine'
 import { useStore } from '../lib/store'
 import type { Card, Match, Modality, Sumula, Team, Tournament } from '../lib/types'
+import { Reschedule } from './Reschedule'
 import { AnimatedNumber, Button, Crest, fmtDate, inputCls, LiveDot, Modal, spring } from './ui'
 
 export function fmtTime(ms: number) {
@@ -194,6 +195,8 @@ export function SumulaModal({ t, mod, match, onClose }: { t: Tournament; mod?: M
               Súmula de {mod.kind === 'pontos' ? 'pontos' : mod.kind === 'set' ? 'sets' : 'colocação'}
             </span>
           </div>
+
+          {!readOnly && match.status === 'agendada' && !match.bye && <Reschedule key={match.id} t={t} mod={mod} match={match} />}
 
           {!ready && <p className="rounded-2xl bg-surface-2 p-4 text-sm text-muted">Os adversários desta partida ainda não foram definidos.</p>}
 

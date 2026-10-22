@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { generateMatches } from './engine'
-import { addReferee, refereeAssignments, removeReferee, removeTeam, toggleSeed, upsertTeam, validateReferee, validateTeam } from './registry'
-import type { Modality, Team, Tournament } from './types'
+import { applySumula, generateMatches } from './engine'
+import {
+  addReferee,
+  prizeModality,
+  prizeWinners,
+  refereeAssignments,
+  removePrize,
+  removeReferee,
+  removeTeam,
+  toggleSeed,
+  upsertPrize,
+  upsertTeam,
+  validatePrize,
+  validateReferee,
+  validateTeam,
+} from './registry'
+import type { Modality, Prize, Team, Tournament } from './types'
 
 const team = (id: string, p: Partial<Team> = {}): Team => ({ id, name: `Time ${id}`, short: id.toUpperCase().padEnd(2, 'X'), color: '#000', coach: 'Ana', players: [], ...p })
 const mod = (id: string, teamIds: string[]): Modality => ({ id, sport: 'Futsal', kind: 'pontos', category: 'M', format: 'eliminacao', teamIds, seeds: [], groups: [], matches: [] })
@@ -76,6 +90,39 @@ describe('removeTeam', () => {
     const base = tournament()
     base.modalities[0] = generateMatches(base.modalities[0])
     expect(() => removeTeam(base, 'a')).toThrow()
+  })
+})
+
+describe('prêmios', () => {
+  const prize = (p: Partial<Prize> = {}): Prize => ({ id: 'pz', name: 'Troféu', kind: 'coletivo', place: 1, ...p })
+
+  it('valida nome, colocação e valor', () => {
+    expect(validatePrize(prize())).toEqual([])
+    expect(validatePrize(prize({ name: ' ', place: 0, value: -5 }))).toHaveLength(3)
+  })
+
+  it('entrega ao campeão da modalidade quando ela termina', () => {
+    let t = tournament()
+    t = { ...t, modalities: [generateMatches(t.modalities[0])] }
+    const p = prize({ modalityId: 'm1' })
+    expect(prizeWinners(t, p)).toEqual([])
+    const final = t.modalities[0].matches[0]
+    t = { ...t, modalities: [applySumula(t.modalities[0], final.id, { kind: 'pontos', a: 0, b: 1, cards: [] })] }
+    expect(prizeWinners(t, p).map((x) => x.id)).toEqual([final.b])
+    expect(prizeWinners(t, prize({ modalityId: 'm1', place: 2 })).map((x) => x.id)).toEqual([final.a])
+  })
+
+  it('"Geral" só resolve quando há uma única modalidade', () => {
+    const t = tournament()
+    expect(prizeModality(t, prize())).toBeUndefined()
+    expect(prizeModality({ ...t, modalities: [t.modalities[0]] }, prize())?.id).toBe('m1')
+  })
+
+  it('cadastra ordenado por colocação e limpa contemplado de prêmio coletivo', () => {
+    let t = upsertPrize(tournament(), prize({ id: 'b', place: 2, awardee: 'X' }))
+    t = upsertPrize(t, prize({ id: 'a', place: 1, kind: 'individual', awardee: '  Lia  ' }))
+    expect(t.prizes.map((p) => [p.id, p.awardee])).toEqual([['a', 'Lia'], ['b', undefined]])
+    expect(removePrize(t, 'a').prizes.map((p) => p.id)).toEqual(['b'])
   })
 })
 

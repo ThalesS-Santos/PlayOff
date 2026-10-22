@@ -240,12 +240,27 @@ export function generateProva(modId: string, teamIds: string[]): Match[] {
   ]
 }
 
-export function generateMatches(mod: Modality, groupCount = 2): Modality {
+/** Sugestão de nº de grupos: grupos de 3 a 5 times. */
+export function defaultGroupCount(teams: number) {
+  if (teams <= 5) return 1
+  if (teams <= 10) return 2
+  return Math.min(8, Math.round(teams / 4))
+}
+
+/** Opções válidas de nº de grupos: ao menos 2 times por grupo, até 8 grupos. */
+export function groupCountOptions(teams: number) {
+  return Array.from({ length: Math.min(8, Math.floor(teams / 2)) }, (_, i) => i + 1)
+}
+
+export function generateMatches(mod: Modality, groupCount?: number): Modality {
   const seeds = orderedSeeds(mod)
   if (mod.format === 'prova') return { ...mod, groups: [], matches: generateProva(mod.id, seeds) }
   if (mod.format === 'grupos_mata') {
-    const { groups, matches } = generateGroups(mod.id, seeds, groupCount, mod.advancePerGroup ?? 2)
-    return { ...mod, groups, matches }
+    const count = Math.max(1, Math.min(groupCount ?? mod.groupCount ?? defaultGroupCount(seeds.length), Math.floor(seeds.length / 2)))
+    // com um único grupo, ao menos 2 classificados fazem a final
+    const advance = count === 1 ? 2 : (mod.advancePerGroup ?? 2)
+    const { groups, matches } = generateGroups(mod.id, seeds, count, advance)
+    return { ...mod, groupCount: count, groups, matches }
   }
   return { ...mod, groups: [], matches: generateElimination(mod.id, seeds) }
 }
@@ -410,6 +425,31 @@ export function champion(mod: Modality): string | undefined {
   return final && final.status === 'encerrada' ? winnerOf(final) : undefined
 }
 
+/**
+ * Times em uma colocação final da modalidade. Sem disputa de 3º lugar, os dois
+ * perdedores das semifinais dividem o 3º lugar. Vazio enquanto não definido.
+ */
+export function placeOf(mod: Modality, place: number): string[] {
+  if (mod.format === 'prova') {
+    const m = mod.matches[0]
+    const id = m && m.status === 'encerrada' ? ranking(m)[place - 1]?.teamId : undefined
+    return id ? [id] : []
+  }
+  const final = mod.matches.find((m) => !m.groupId && !m.nextMatchId)
+  if (!final || final.status !== 'encerrada') return []
+  const loser = (m: Match) => {
+    const w = winnerOf(m)
+    return w && !m.bye ? (w === m.a ? m.b : m.a) : undefined
+  }
+  if (place === 1) return [winnerOf(final)].filter(Boolean) as string[]
+  if (place === 2) return [loser(final)].filter(Boolean) as string[]
+  if (place === 3) {
+    const semis = mod.matches.filter((m) => m.nextMatchId === final.id)
+    return semis.map(loser).filter(Boolean) as string[]
+  }
+  return []
+}
+
 export function progress(t: Tournament) {
   const all = t.modalities.flatMap((m) => m.matches.filter((x) => !x.bye))
   if (!all.length) return 0
@@ -435,8 +475,9 @@ const stageKey = (m: Match) => (m.groupId ? m.round : 100 + m.round)
 
 /**
  * Heurística gulosa: aloca cada partida no primeiro horário viável sem conflito de
- * local, time ou árbitro, respeitando a ordem das fases e um intervalo de descanso.
- * Partidas encerradas permanecem fixas.
+ * local, time ou árbitro, respeitando a ordem das fases, uma partida por time por dia
+ * e cada fase começando no dia seguinte à anterior (relaxado se o período não couber).
+ * Partidas encerradas ou fixadas pelo organizador permanecem onde estão.
  */
 export function scheduleTournament(t: Tournament, notBefore?: string): Tournament {
   const days = daysBetween(t.startDate, t.endDate)
@@ -450,11 +491,16 @@ export function scheduleTournament(t: Tournament, notBefore?: string): Tournamen
   }
   const teamsOf = (m: Match) => (m.participants ?? [m.a, m.b]).filter(Boolean) as string[]
   const refLoad = new Map<string, number>(t.referees.map((r) => [r, 0]))
-  const lastSlotOfTeam = new Map<string, number>()
+  const dayOf = (i: number) => Math.floor(i / SLOTS.length)
+  const teamDays = new Map<string, Set<number>>()
+  const markDay = (tm: string, i: number) => {
+    if (!teamDays.has(tm)) teamDays.set(tm, new Set())
+    teamDays.get(tm)!.add(dayOf(i))
+  }
 
   const stageEnd = new Map<string, number>()
   const fixed = t.modalities.flatMap((mod) =>
-    mod.matches.filter((m) => m.status !== 'agendada' && m.date && m.time).map((m) => ({ m, mod })),
+    mod.matches.filter((m) => (m.status !== 'agendada' || m.pinned) && m.date && m.time).map((m) => ({ m, mod })),
   )
   for (const { m, mod } of fixed) {
     const i = slotIdx(m.date!, m.time!)
@@ -468,50 +514,124 @@ export function scheduleTournament(t: Tournament, notBefore?: string): Tournamen
     }
     teamsOf(m).forEach((tm) => {
       b.teams.add(tm)
-      lastSlotOfTeam.set(tm, Math.max(lastSlotOfTeam.get(tm) ?? -9, i))
+      markDay(tm, i)
     })
   }
 
   const modalities = t.modalities.map((mod) => ({ ...mod, matches: mod.matches.map((m) => ({ ...m })) }))
   // intercala modalidades por estágio para distribuir o calendário
   const queue = modalities
-    .flatMap((mod, mi) => mod.matches.filter((m) => !m.bye && m.status === 'agendada').map((m) => ({ m, mi, mod })))
+    .flatMap((mod, mi) => mod.matches.filter((m) => !m.bye && m.status === 'agendada' && !m.pinned).map((m) => ({ m, mi, mod })))
     .sort((x, y) => stageKey(x.m) - stageKey(y.m) || x.mi - y.mi || x.m.slot - y.m.slot)
 
   for (const { m, mod } of queue) {
     const prevStages = [...stageEnd.entries()].filter(
       ([k]) => k.startsWith(mod.id + ':') && Number(k.split(':')[1]) < stageKey(m),
     )
-    const minAfter = prevStages.length ? Math.max(...prevStages.map(([, v]) => v)) + 1 : 0
+    const prevEnd = prevStages.length ? Math.max(...prevStages.map(([, v]) => v)) : -1
+    // partidas fixadas de fases posteriores limitam até quando esta pode acontecer
+    const laterFixed = fixed.filter((f) => f.mod.id === mod.id && stageKey(f.m) > stageKey(m)).map((f) => slotIdx(f.m.date!, f.m.time!))
+    const maxBefore = laterFixed.length ? Math.min(...laterFixed) : days.length * SLOTS.length
     const teams = teamsOf(m)
     // limpa a alocação anterior: se não couber, fica sem horário (e é sinalizado em detectConflicts)
     m.date = m.time = m.venue = m.referee = undefined
-    let placed = false
-    for (let i = Math.max(minAfter, minSlot); i < days.length * SLOTS.length && !placed; i++) {
-      const b = at(i)
-      if (teams.some((tm) => b.teams.has(tm))) continue
-      if (teams.some((tm) => i - (lastSlotOfTeam.get(tm) ?? -9) < 2)) continue
-      const venue = (mod.venues?.length ? mod.venues : t.venues).find((v) => !b.venues.has(v))
-      if (!venue) continue
-      const referee = [...t.referees].sort((x, y) => (refLoad.get(x) ?? 0) - (refLoad.get(y) ?? 0)).find((r) => !b.refs.has(r))
-      if (!referee) continue
-      m.date = days[Math.floor(i / SLOTS.length)]
-      m.time = SLOTS[i % SLOTS.length]
-      m.venue = venue
-      m.referee = referee
-      b.venues.add(venue)
-      b.refs.add(referee)
-      teams.forEach((tm) => {
-        b.teams.add(tm)
-        lastSlotOfTeam.set(tm, i)
-      })
-      refLoad.set(referee, (refLoad.get(referee) ?? 0) + 1)
-      const key = `${mod.id}:${stageKey(m)}`
-      stageEnd.set(key, Math.max(stageEnd.get(key) ?? 0, i))
-      placed = true
+
+    const tryPlace = (from: number, perDay: boolean) => {
+      for (let i = Math.max(from, minSlot); i < maxBefore; i++) {
+        const b = at(i)
+        if (teams.some((tm) => b.teams.has(tm))) continue
+        // descanso: cada time joga no máximo uma partida por dia
+        if (perDay && teams.some((tm) => teamDays.get(tm)?.has(dayOf(i)))) continue
+        const venue = (mod.venues?.length ? mod.venues : t.venues).find((v) => !b.venues.has(v))
+        if (!venue) continue
+        const referee = [...t.referees].sort((x, y) => (refLoad.get(x) ?? 0) - (refLoad.get(y) ?? 0)).find((r) => !b.refs.has(r))
+        if (!referee) continue
+        m.date = days[dayOf(i)]
+        m.time = SLOTS[i % SLOTS.length]
+        m.venue = venue
+        m.referee = referee
+        b.venues.add(venue)
+        b.refs.add(referee)
+        teams.forEach((tm) => {
+          b.teams.add(tm)
+          markDay(tm, i)
+        })
+        refLoad.set(referee, (refLoad.get(referee) ?? 0) + 1)
+        const key = `${mod.id}:${stageKey(m)}`
+        stageEnd.set(key, Math.max(stageEnd.get(key) ?? 0, i))
+        return true
+      }
+      return false
     }
+    // preferência: fase nova começa no dia seguinte e cada time joga uma vez por dia;
+    // se o período não comportar, relaxa para o horário seguinte e só o intervalo mínimo
+    const nextDay = prevEnd < 0 ? 0 : (dayOf(prevEnd) + 1) * SLOTS.length
+    if (!tryPlace(nextDay, true)) tryPlace(prevEnd + 1, false)
   }
   return { ...t, modalities }
+}
+
+export interface Slot {
+  date: string
+  time: string
+  venue: string
+  referee: string
+}
+
+/** Dias do torneio disponíveis para agendamento. */
+export const tournamentDays = (t: Tournament) => daysBetween(t.startDate, t.endDate)
+
+/**
+ * Motivos que impedem colocar a partida no horário indicado: fora do período,
+ * local/árbitro/time ocupados no mesmo horário, ou fase anterior ainda depois dele.
+ */
+export function slotConflicts(t: Tournament, matchId: string, slot: Slot): string[] {
+  const mod = t.modalities.find((m) => m.matches.some((x) => x.id === matchId))
+  const match = mod?.matches.find((x) => x.id === matchId)
+  if (!mod || !match) return ['Partida não encontrada.']
+  const reasons: string[] = []
+  if (!tournamentDays(t).includes(slot.date)) reasons.push('Data fora do período do torneio.')
+  if (!SLOTS.includes(slot.time)) reasons.push('Horário fora da grade.')
+  const teams = (m: Match) => (m.participants ?? [m.a, m.b]).filter(Boolean) as string[]
+  const mine = teams(match)
+  for (const md of t.modalities)
+    for (const m of md.matches) {
+      if (m.id === matchId || m.bye || m.date !== slot.date || m.time !== slot.time) continue
+      if (m.venue === slot.venue) reasons.push(`${slot.venue} já recebe outra partida nesse horário.`)
+      if (m.referee === slot.referee) reasons.push(`${slot.referee} já apita outra partida nesse horário.`)
+      const clash = teams(m).find((x) => mine.includes(x))
+      if (clash) reasons.push(`${t.teams.find((x) => x.id === clash)?.name ?? 'Um time'} já joga nesse horário.`)
+    }
+  // ordem das fases: não pode acontecer antes de uma partida de estágio anterior
+  const key = `${slot.date} ${slot.time}`
+  const earlier = mod.matches.find((m) => !m.bye && stageKey(m) < stageKey(match) && m.date && m.time && `${m.date} ${m.time}` >= key)
+  if (earlier) reasons.push(`Precisa ser depois de ${earlier.phase} (${fmtSlot(earlier.date!, earlier.time!)}).`)
+  const later = mod.matches.find((m) => !m.bye && stageKey(m) > stageKey(match) && m.date && m.time && `${m.date} ${m.time}` <= key)
+  if (later) reasons.push(`Precisa ser antes de ${later.phase} (${fmtSlot(later.date!, later.time!)}).`)
+  return [...new Set(reasons)]
+}
+
+const fmtSlot = (date: string, time: string) => `${date.split('-').reverse().slice(0, 2).join('/')} às ${time}`
+
+/** Coloca a partida no horário escolhido e a fixa (a otimização não a move mais). */
+export function reschedule(t: Tournament, matchId: string, slot: Slot): Tournament {
+  const reasons = slotConflicts(t, matchId, slot)
+  if (reasons.length) throw new Error(reasons[0])
+  return {
+    ...t,
+    modalities: t.modalities.map((md) => ({
+      ...md,
+      matches: md.matches.map((m) => (m.id === matchId ? { ...m, ...slot, pinned: true } : m)),
+    })),
+  }
+}
+
+/** Devolve a partida para a otimização automática. */
+export function unpin(t: Tournament, matchId: string): Tournament {
+  return {
+    ...t,
+    modalities: t.modalities.map((md) => ({ ...md, matches: md.matches.map((m) => (m.id === matchId ? { ...m, pinned: undefined } : m)) })),
+  }
 }
 
 export interface Conflict {

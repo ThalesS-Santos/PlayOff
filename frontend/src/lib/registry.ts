@@ -1,4 +1,5 @@
-import type { Modality, Team, Tournament } from './types'
+import { placeOf } from './engine'
+import type { Modality, Prize, Team, Tournament } from './types'
 
 /* Cadastros do torneio (RF02): times, jogadores, técnicos e árbitros. */
 
@@ -90,6 +91,39 @@ export function addReferee(t: Tournament, name: string): Tournament {
   if (err) throw new Error(err)
   return { ...t, referees: [...t.referees, name.trim()] }
 }
+
+/* ───────────── Prêmios ───────────── */
+
+/** Modalidade a que o prêmio se refere (com uma só modalidade, "Geral" é ela). */
+export function prizeModality(t: Tournament, p: Prize) {
+  return t.modalities.find((m) => m.id === p.modalityId) ?? (t.modalities.length === 1 ? t.modalities[0] : undefined)
+}
+
+/** Times contemplados por um prêmio coletivo, conforme a colocação final. */
+export function prizeWinners(t: Tournament, p: Prize): Team[] {
+  if (p.kind !== 'coletivo') return []
+  const mod = prizeModality(t, p)
+  if (!mod) return []
+  return placeOf(mod, p.place)
+    .map((id) => t.teams.find((x) => x.id === id))
+    .filter(Boolean) as Team[]
+}
+
+export function validatePrize(p: Prize): string[] {
+  const errors: string[] = []
+  if (!p.name.trim()) errors.push('Informe o nome do prêmio.')
+  if (!Number.isInteger(p.place) || p.place < 1) errors.push('Colocação deve ser 1 ou mais.')
+  if (p.value != null && (Number.isNaN(p.value) || p.value < 0)) errors.push('Valor não pode ser negativo.')
+  return errors
+}
+
+export function upsertPrize(t: Tournament, p: Prize): Tournament {
+  const clean: Prize = { ...p, name: p.name.trim(), awardee: p.kind === 'individual' ? p.awardee?.trim() || undefined : undefined }
+  const prizes = t.prizes.some((x) => x.id === p.id) ? t.prizes.map((x) => (x.id === p.id ? clean : x)) : [...t.prizes, clean]
+  return { ...t, prizes: [...prizes].sort((a, b) => a.place - b.place) }
+}
+
+export const removePrize = (t: Tournament, id: string): Tournament => ({ ...t, prizes: t.prizes.filter((p) => p.id !== id) })
 
 export function removeReferee(t: Tournament, name: string): Tournament {
   if (refereeAssignments(t, name).length) throw new Error('Árbitro escalado em partidas pendentes.')

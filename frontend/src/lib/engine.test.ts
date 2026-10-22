@@ -2,14 +2,20 @@ import { describe, expect, it } from 'vitest'
 import {
   applySumula,
   champion,
+  defaultGroupCount,
   detectConflicts,
   generateElimination,
   generateGroups,
   generateMatches,
+  groupCountOptions,
+  placeOf,
+  reschedule,
   roundRobin,
   scheduleTournament,
   seedOrder,
+  slotConflicts,
   standings,
+  unpin,
   winnerOf,
 } from './engine'
 import { buildSeed } from './seed'
@@ -164,10 +170,125 @@ describe('agenda (RF04)', () => {
     for (const m of ms.filter((x) => !x.groupId && !x.bye)) expect(key(m) > lastGroup).toBe(true)
   })
 
+  it('cada time joga uma vez por dia e o mata-mata começa no dia seguinte aos grupos', () => {
+    const t = scheduleTournament(tournament(['2026-11-10', '2026-11-20'], ['Q1', 'Q2'], ['R1', 'R2']))
+    const ms = t.modalities[0].matches.filter((m) => !m.bye)
+    const seen = new Set<string>()
+    for (const m of ms.filter((x) => x.groupId))
+      for (const tm of [m.a, m.b]) {
+        expect(seen.has(`${tm}@${m.date}`)).toBe(false)
+        seen.add(`${tm}@${m.date}`)
+      }
+    const lastGroupDay = ms.filter((m) => m.groupId).map((m) => m.date!).sort().pop()!
+    for (const m of ms.filter((x) => !x.groupId)) expect(m.date! > lastGroupDay).toBe(true)
+  })
+
+  it('torneio de um dia ainda cabe, relaxando o descanso', () => {
+    const t = scheduleTournament(tournament(['2026-11-10', '2026-11-10'], ['Q1', 'Q2', 'Q3'], ['R1', 'R2', 'R3'], 4))
+    expect(detectConflicts(t)).toEqual([])
+  })
+
   it('sinaliza partidas que não couberam no período', () => {
     const t = scheduleTournament(tournament(['2026-11-10', '2026-11-10'], ['Q1'], ['R1'], 16))
     const c = detectConflicts(t)
     expect(c.some((x) => x.reason.startsWith('Sem horário'))).toBe(true)
+  })
+})
+
+describe('sorteio configurável', () => {
+  it.each([
+    [5, 1],
+    [6, 2],
+    [8, 2],
+    [12, 3],
+    [20, 5],
+  ])('%i times: sugere %i grupo(s)', (n, g) => expect(defaultGroupCount(n)).toBe(g))
+
+  it('respeita nº de grupos e classificados escolhidos', () => {
+    const m = generateMatches(mod({ format: 'grupos_mata', teamIds: teams(12), advancePerGroup: 1 }), 4)
+    expect(m.groups).toHaveLength(4)
+    expect(m.groupCount).toBe(4)
+    // 4 classificados → semifinal + final
+    expect(m.matches.filter((x) => !x.groupId)).toHaveLength(3)
+    expect(champion(playAll(m))).toBe('t1')
+  })
+
+  it('grupo único sempre leva 1º e 2º para a final', () => {
+    const m = generateMatches(mod({ format: 'grupos_mata', teamIds: teams(4), advancePerGroup: 1 }), 1)
+    const ko = m.matches.filter((x) => !x.groupId)
+    expect(ko).toHaveLength(1)
+    expect(champion(playAll(m))).toBe('t1')
+  })
+
+  it('limita grupos a ao menos 2 times cada', () => {
+    expect(groupCountOptions(7)).toEqual([1, 2, 3])
+    expect(generateMatches(mod({ format: 'grupos_mata', teamIds: teams(6) }), 5).groups).toHaveLength(3)
+  })
+})
+
+describe('pódio', () => {
+  it('eliminação: campeão, vice e semifinalistas em 3º', () => {
+    const m = playAll(mod({ format: 'eliminacao', teamIds: teams(8), matches: generateElimination('m', teams(8)) }))
+    expect(placeOf(m, 1)).toEqual(['t1'])
+    expect(placeOf(m, 2)).toEqual(['t2'])
+    expect(placeOf(m, 3).sort()).toEqual(['t3', 't4'])
+  })
+
+  it('vazio enquanto a final não acaba', () => {
+    expect(placeOf(mod({ format: 'eliminacao', teamIds: teams(4), matches: generateElimination('m', teams(4)) }), 1)).toEqual([])
+  })
+
+  it('prova: ordem dos tempos', () => {
+    let m = generateMatches(mod({ format: 'prova', kind: 'colocacao', teamIds: ['A', 'B', 'C'] }))
+    m = applySumula(m, m.matches[0].id, { kind: 'colocacao', entries: [{ teamId: 'A', timeMs: 3 }, { teamId: 'B', timeMs: 1 }, { teamId: 'C', timeMs: 2 }] })
+    expect([1, 2, 3].map((p) => placeOf(m, p)[0])).toEqual(['B', 'C', 'A'])
+  })
+})
+
+describe('reagendamento manual', () => {
+  const base = () =>
+    scheduleTournament({
+      id: 't', name: 'T', description: '', orgId: 'o', organizerId: 'u', visibility: 'publico', status: 'chaveamento',
+      startDate: '2026-11-10', endDate: '2026-11-20', city: '', venueName: '', venues: ['Q1', 'Q2'], referees: ['R1', 'R2'], cover: ['#000', '#fff'],
+      teams: [], prizes: [], favoritedBy: [], createdAt: 0,
+      modalities: [generateMatches(mod({ format: 'grupos_mata', teamIds: teams(8) }), 2)],
+    })
+
+  it('aponta local, árbitro e time ocupados no mesmo horário', () => {
+    const t = base()
+    const [x, y] = t.modalities[0].matches.filter((m) => m.groupId)
+    const sameAsX = { date: x.date!, time: x.time!, venue: x.venue!, referee: x.referee! }
+    const r = slotConflicts(t, y.id, sameAsX)
+    expect(r.some((s) => s.includes('Q') && s.includes('recebe'))).toBe(true)
+    expect(r.some((s) => s.includes('apita'))).toBe(true)
+  })
+
+  it('não deixa o mata-mata antes da fase de grupos', () => {
+    const t = base()
+    const final = t.modalities[0].matches.find((m) => !m.groupId && !m.nextMatchId)!
+    expect(slotConflicts(t, final.id, { date: '2026-11-10', time: '09:00', venue: 'Q2', referee: 'R2' }).join()).toMatch(/depois de Grupo/)
+    expect(slotConflicts(t, final.id, { date: '2026-12-01', time: '09:00', venue: 'Q2', referee: 'R2' })).toContain('Data fora do período do torneio.')
+  })
+
+  it('partida reagendada fica fixa na otimização', () => {
+    let t = base()
+    const final = t.modalities[0].matches.find((m) => !m.groupId && !m.nextMatchId)!
+    const slot = { date: '2026-11-20', time: '20:00', venue: 'Q1', referee: 'R1' }
+    t = reschedule(t, final.id, slot)
+    t = scheduleTournament(t)
+    expect(t.modalities[0].matches.find((m) => m.id === final.id)).toMatchObject({ ...slot, pinned: true })
+    expect(detectConflicts(t)).toEqual([])
+    t = scheduleTournament(unpin(t, final.id))
+    expect(t.modalities[0].matches.find((m) => m.id === final.id)!.date).not.toBe('2026-11-20')
+  })
+
+  it('jogos de grupo não vão para depois de um mata-mata fixado', () => {
+    let t = base()
+    const semi = t.modalities[0].matches.find((m) => !m.groupId && m.nextMatchId)!
+    t = reschedule(t, semi.id, { date: semi.date!, time: semi.time!, venue: semi.venue!, referee: semi.referee! })
+    t = scheduleTournament(t, '2026-11-10')
+    const semiKey = `${semi.date} ${semi.time}`
+    for (const m of t.modalities[0].matches.filter((x) => x.groupId)) expect(`${m.date} ${m.time}` < semiKey).toBe(true)
   })
 })
 

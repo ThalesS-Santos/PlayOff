@@ -87,7 +87,7 @@ interface Ctx extends State {
   canManage: (t: Tournament) => boolean
   registerSumula: (tId: string, modId: string, matchId: string, s: Sumula) => void
   saveLive: (tId: string, modId: string, matchId: string, s: Sumula) => void
-  generate: (tId: string, modId: string, groupCount?: number) => void
+  generate: (tId: string, modId: string, opts?: { groupCount?: number; advance?: number }) => void
   optimize: (tId: string) => void
   transition: (tId: string, status: TournamentStatus) => void
   /** Aplica uma alteração pura ao torneio (cadastros, RF02). */
@@ -149,12 +149,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             m.id !== modId ? m : { ...m, matches: m.matches.map((x) => (x.id === matchId ? { ...x, sumula: s, status: 'ao_vivo' } : x)) },
           ),
         })),
-      generate: (tId, modId, groupCount) =>
+      generate: (tId, modId, opts) =>
         update(tId, (t) =>
           scheduleTournament({
             ...t,
             status: t.status === 'publicado' || t.status === 'criacao' ? 'chaveamento' : t.status,
-            modalities: t.modalities.map((m) => (m.id === modId ? generateMatches(m, groupCount) : m)),
+            modalities: t.modalities.map((m) =>
+              m.id === modId ? generateMatches({ ...m, advancePerGroup: opts?.advance ?? m.advancePerGroup }, opts?.groupCount) : m,
+            ),
           }),
         ),
       edit: update,

@@ -84,6 +84,8 @@ export interface Match {
   time?: string
   venue?: string
   referee?: string
+  /** horário definido manualmente pelo organizador: a otimização não o move */
+  pinned?: boolean
 }
 
 export interface Group {
@@ -105,6 +107,8 @@ export interface Modality {
   matches: Match[]
   /** classificados por grupo para o mata-mata */
   advancePerGroup?: number
+  /** nº de grupos escolhido no sorteio (padrão: calculado pelo nº de times) */
+  groupCount?: number
   /** espaços adequados à modalidade (ex.: natação só na piscina); padrão: todos do torneio */
   venues?: string[]
 }
@@ -116,6 +120,8 @@ export interface Prize {
   value?: number
   place: number
   modalityId?: string
+  /** contemplado de prêmio individual (artilheiro, MVP...), definido pelo organizador */
+  awardee?: string
 }
 
 export interface Tournament {

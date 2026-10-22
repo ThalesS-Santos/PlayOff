@@ -25,12 +25,14 @@ import { useMemo, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { AccessModal } from '../components/AccessModal'
 import { Bracket } from '../components/Bracket'
+import { DrawModal } from '../components/DrawModal'
 import { RegistrationsTab } from '../components/Registrations'
 import { Calendar, GroupTables, MatchRow } from '../components/Competition'
 import { SumulaModal } from '../components/SumulaModal'
 import { FavButton } from '../components/TournamentCard'
 import { AnimatedNumber, Button, Crest, Empty, fmtDate, Modal, Page, rise, spring, stagger, StatusBadge, Tabs } from '../components/ui'
 import { champion, detectConflicts, progress } from '../lib/engine'
+import { prizeModality, prizeWinners } from '../lib/registry'
 import { STATUS_LABEL, useStore } from '../lib/store'
 import type { Match, Modality, Team, Tournament, TournamentStatus } from '../lib/types'
 
@@ -201,7 +203,8 @@ function ModalityPicker({ t, value, onChange }: { t: Tournament; value: string; 
 /* ───────────── Abas ───────────── */
 
 function BracketTab({ t, mod, setModId, onSelect }: { t: Tournament; mod: Modality; setModId: (id: string) => void; onSelect: (m: Match) => void }) {
-  const { canManage, generate, toast } = useStore()
+  const { canManage } = useStore()
+  const [drawing, setDrawing] = useState(false)
   const champ = champion(mod)
   const champTeam = t.teams.find((x) => x.id === champ)
 
@@ -215,13 +218,7 @@ function BracketTab({ t, mod, setModId, onSelect }: { t: Tournament; mod: Modali
           body={`${mod.teamIds.length} equipes inscritas. A chave é sorteada quando as inscrições encerram.`}
           action={
             canManage(t) && (
-              <Button
-                icon={<Sparkles size={16} />}
-                onClick={() => {
-                  generate(t.id, mod.id)
-                  toast({ title: 'Chave sorteada!', body: 'Jogos gerados e agendados sem conflitos.' })
-                }}
-              >
+              <Button icon={<Sparkles size={16} />} onClick={() => setDrawing(true)}>
                 Sortear e gerar jogos
               </Button>
             )
@@ -266,6 +263,7 @@ function BracketTab({ t, mod, setModId, onSelect }: { t: Tournament; mod: Modali
           )}
         </div>
       )}
+      <DrawModal t={t} mod={drawing ? mod : null} onClose={() => setDrawing(false)} />
     </div>
   )
 }
@@ -363,8 +361,8 @@ function PrizesTab({ t }: { t: Tournament }) {
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {t.prizes.map((p) => {
-        const mod = t.modalities.find((m) => m.id === p.modalityId)
-        const winner = mod && p.place === 1 ? t.teams.find((x) => x.id === champion(mod)) : undefined
+        const mod = prizeModality(t, p)
+        const winners = prizeWinners(t, p)
         return (
           <motion.div key={p.id} variants={rise} whileHover={{ y: -4, rotate: -0.5 }} className="relative overflow-hidden rounded-3xl border border-line bg-surface p-5">
             <motion.div className="absolute -top-10 -right-10 size-32 rounded-full bg-warn/10 blur-2xl" animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 4, repeat: Infinity }} />
@@ -376,14 +374,15 @@ function PrizesTab({ t }: { t: Tournament }) {
             </div>
             <p className="font-display relative mt-4 text-lg font-semibold">{p.name}</p>
             <p className="relative text-sm text-muted">
-              {p.place}º lugar {mod ? `· ${mod.sport}` : '· Geral'}
+              {p.kind === 'individual' ? 'Destaque individual' : `${p.place}º lugar`} {mod ? `· ${mod.sport}` : '· Geral'}
             </p>
             {p.value != null && <p className="font-display relative mt-3 text-2xl font-bold text-ok">R$ {p.value.toLocaleString('pt-BR')}</p>}
-            {winner && (
-              <div className="relative mt-4 flex items-center gap-2 rounded-xl bg-warn/10 p-2 text-sm">
-                <Crest team={winner} size={24} /> <b>{winner.name}</b>
+            {winners.map((w) => (
+              <div key={w.id} className="relative mt-4 flex items-center gap-2 rounded-xl bg-warn/10 p-2 text-sm">
+                <Crest team={w} size={24} /> <b>{w.name}</b>
               </div>
-            )}
+            ))}
+            {p.kind === 'individual' && p.awardee && <div className="relative mt-4 rounded-xl bg-warn/10 p-2 text-sm font-semibold">{p.awardee}</div>}
           </motion.div>
         )
       })}
@@ -394,7 +393,8 @@ function PrizesTab({ t }: { t: Tournament }) {
 /* ───────────── Gestão (organizador) ───────────── */
 
 function ManageTab({ t }: { t: Tournament }) {
-  const { optimize, toast, transition, generate, dispatch } = useStore()
+  const { optimize, toast, transition, dispatch } = useStore()
+  const [drawMod, setDrawMod] = useState<Modality | null>(null)
   const nav = useNavigate()
   const conflicts = detectConflicts(t)
   const [busy, setBusy] = useState(false)
@@ -471,7 +471,7 @@ function ManageTab({ t }: { t: Tournament }) {
               <span>
                 {m.sport} <span className="text-faint">· {m.teamIds.length} equipes · {m.format === 'eliminacao' ? 'Eliminação simples' : m.format === 'grupos_mata' ? 'Grupos + mata-mata' : 'Prova'}</span>
               </span>
-              <Button size="sm" variant="soft" icon={<Shuffle size={14} />} onClick={() => (generate(t.id, m.id), toast({ title: 'Novo sorteio', body: m.sport }))}>
+              <Button size="sm" variant="soft" icon={<Shuffle size={14} />} onClick={() => setDrawMod(m)}>
                 Sortear
               </Button>
             </div>
@@ -486,6 +486,8 @@ function ManageTab({ t }: { t: Tournament }) {
           </Button>
         </div>
       </Panel>
+
+      <DrawModal t={t} mod={drawMod} onClose={() => setDrawMod(null)} />
 
       <Modal open={!!confirm} onClose={() => setConfirm(null)} title={confirm === 'delete' ? 'Excluir torneio?' : 'Cancelar torneio?'}>
         <p className="text-sm text-muted">{confirm === 'delete' ? 'O torneio some do catálogo. Você pode restaurar a demonstração pelo menu do usuário.' : 'O torneio passa ao estado "Cancelado" e não poderá mais ser disputado.'}</p>

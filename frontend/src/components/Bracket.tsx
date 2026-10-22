@@ -39,7 +39,7 @@ function Side({ m, side, team, hovered, onHover }: { m: Match; side: 'a' | 'b'; 
     >
       <Crest team={team} size={22} />
       <span className={clsx('min-w-0 flex-1 truncate text-[13px]', team ? 'font-medium' : 'text-faint italic')}>
-        {team?.name ?? (m.bye && !id ? 'BYE' : (side === 'a' ? m.placeholderA : m.placeholderB) ?? 'A definir')}
+        {team?.name ?? (side === 'a' ? m.placeholderA : m.placeholderB) ?? (m.bye ? 'BYE' : 'A definir')}
       </span>
       {pen != null && <span className="text-[10px] text-faint tabular-nums">({pen})</span>}
       {score != null && (
