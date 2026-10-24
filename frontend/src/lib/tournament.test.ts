@@ -103,7 +103,7 @@ describe('súmulas e estados', () => {
     const final = t.modalities[0].matches.find((x) => !x.nextMatchId)!
     expect(() => recordLive(t, 'm', final.id, win(0, 0))).toThrow(/adversários/)
     const m = t.modalities[0].matches.find((x) => x.a && x.b)!
-    expect(() => recordLive(t, 'm', m.id, win(-1, 0))).toThrow(/não negativos/)
+    expect(() => recordLive(t, 'm', m.id, win(-1, 0))).toThrow(/de 0 a 9999/)
     const done = recordSumula(t, 'm', m.id, win(1, 0))
     expect(() => recordLive(done, 'm', m.id, win(2, 0))).toThrow(/encerrada/)
   })
@@ -155,6 +155,8 @@ describe('dados do torneio (criar/editar)', () => {
       'Torneio privado precisa de um código com 4+ caracteres.',
     ])
     expect(validateDetails(details({ endDate: '2026-11-01' }), [], 'u1')).toEqual(['A data final deve ser depois da inicial.'])
+    for (const venues of [['Q1', ' '], ['Q1', ' q1 ']])
+      expect(validateDetails(details({ venues }), [], 'u1')).toEqual(['Quadras e espaços não podem ter nome vazio ou repetido.'])
   })
 
   it('nome único por organizador (RN02), ignorando maiúsculas e o próprio torneio', () => {
@@ -200,6 +202,13 @@ describe('criação de torneio (compartilhada com o servidor)', () => {
     referees: ['R'], cover: ['#000000', '#ffffff'], prizes: [{ name: 'T', kind: 'coletivo', place: 1, modalityId: 'm' }], generateNow: false,
     modalities: [{ id: 'm', sport: 'Futsal', kind: 'pontos', category: 'M', format: 'eliminacao', teams: ['A', 'B'], seeds: ['B'] }],
     ...p,
+  })
+
+  it('árbitros vazios ou repetidos são recusados; nomes chegam sem espaços nas pontas', () => {
+    expect(() => createTournament(draft({ referees: ['Ana', 'ana '] }), org, [])).toThrow('Árbitros não podem ter nome vazio ou repetido.')
+    expect(() => createTournament(draft({ referees: [''] }), org, [])).toThrow('Árbitros não podem ter nome vazio ou repetido.')
+    const t = createTournament(draft({ venues: [' Q1 '], referees: [' Rita '] }), org, [])
+    expect(t).toMatchObject({ venues: ['Q1'], referees: ['Rita'] })
   })
 
   it('monta times, modalidades, cabeças de chave e prêmios; sem sortear fica publicado', () => {

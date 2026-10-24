@@ -109,11 +109,18 @@ export function prizeWinners(t: Tournament, p: Prize): Team[] {
     .filter(Boolean) as Team[]
 }
 
-export function validatePrize(p: Prize): string[] {
+/** Maior valor de prêmio (o banco guarda até 10 dígitos antes da vírgula). */
+export const MAX_PRIZE_VALUE = 9_999_999_999
+
+/** Com o torneio, confere também se a modalidade do prêmio existe. */
+export function validatePrize(p: Prize, t?: Tournament): string[] {
   const errors: string[] = []
   if (!p.name.trim()) errors.push('Informe o nome do prêmio.')
   if (p.kind === 'coletivo' && (!Number.isInteger(p.place) || p.place < 1 || p.place > 3)) errors.push('Colocação deve ser 1º, 2º ou 3º lugar.')
+  if (p.kind === 'individual' && (!Number.isInteger(p.place) || p.place < 1 || p.place > 99)) errors.push('Ordem do prêmio individual inválida.')
   if (p.value != null && (Number.isNaN(p.value) || p.value < 0)) errors.push('Valor não pode ser negativo.')
+  else if (p.value != null && p.value > MAX_PRIZE_VALUE) errors.push('Valor alto demais.')
+  if (t && p.modalityId && !t.modalities.some((m) => m.id === p.modalityId)) errors.push('Modalidade do prêmio não existe neste torneio.')
   return errors
 }
 

@@ -7,6 +7,8 @@ export interface Config {
   host: string
   /** origem do frontend liberada no CORS */
   corsOrigin: string
+  /** atrás de um proxy (hospedagem): o IP do usuário vem do cabeçalho X-Forwarded-For */
+  trustProxy: boolean
   jwtSecret: string
   /** onde os dados ficam: memória (desenvolvimento/testes) ou Oracle */
   repo: 'memory' | 'oracle'
@@ -23,6 +25,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: Number(env.PORT ?? 3333),
     host: env.HOST ?? '127.0.0.1',
     corsOrigin: env.CORS_ORIGIN ?? 'http://localhost:5173',
+    trustProxy: env.TRUST_PROXY === 'true',
     // em desenvolvimento, um segredo aleatório por execução (tokens valem até reiniciar)
     jwtSecret: env.JWT_SECRET ?? randomBytes(32).toString('hex'),
     repo,

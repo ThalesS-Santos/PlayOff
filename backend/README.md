@@ -53,6 +53,10 @@ Autenticação: cabeçalho `Authorization: Bearer <token>`. Erros sempre como `{
 | 422 `regra` | Regra de negócio violada (ex.: "Set 1 empatado: todo set tem um vencedor.") |
 | 429 | Muitas tentativas: código de acesso errado 5 vezes, mais de 10 logins ou cadastros por minuto do mesmo IP, ou mais de 600 pedidos por minuto |
 
+Atrás de um proxy (hospedagem como Render ou Railway), defina `TRUST_PROXY=true`: sem isso, todos os usuários aparecem com o IP do proxy e dividem o mesmo limite.
+
+Antes de gravar, a API também confere os limites das colunas do banco (placar até 9999, sets, pênaltis e minuto até 999, ids na URL com até 64 caracteres, valor de prêmio, local e árbitro que existem no torneio). Assim o Oracle nunca recebe um valor que recusaria.
+
 Toda resposta traz cabeçalhos de segurança (`helmet`): `X-Content-Type-Options`, `Strict-Transport-Security`, `Content-Security-Policy` e outros.
 
 ### Conta e organização

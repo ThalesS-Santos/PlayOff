@@ -16,7 +16,7 @@ if (config.repo === 'oracle') {
   await seedRepo(repo)
 }
 
-const app = buildApp({ repo, jwtSecret: config.jwtSecret, corsOrigin: config.corsOrigin, logger: true })
+const app = buildApp({ repo, jwtSecret: config.jwtSecret, corsOrigin: config.corsOrigin, trustProxy: config.trustProxy, logger: true })
 const close = async () => {
   await app.close()
   await repo.close()

@@ -10,6 +10,9 @@ const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data no formato AAAA-MM-DD
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Cor no formato #RRGGBB.')
 const id = z.string().min(1).max(64)
 
+/** id escolhido pelo cliente na URL (time, prêmio): cabe na chave primária do banco */
+export const ClientId = z.string().regex(/^[\w-]{1,64}$/, 'Identificador inválido (até 64 letras, números, _ ou -).')
+
 export const Register = z.object({
   name: text(80).min(2, 'Informe o nome.'),
   email: z.string().email('E-mail inválido.').max(120),

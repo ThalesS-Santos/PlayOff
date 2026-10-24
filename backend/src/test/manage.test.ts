@@ -141,3 +141,34 @@ describe('cadastros (RF02)', () => {
     expect((await call('DELETE', '/torneios/t2/premios/novo', tokens.org)).json().prizes.some((p: { id: string }) => p.id === 'novo')).toBe(false)
   })
 })
+
+/*
+ * Valores que o banco recusaria (tamanho de coluna, precisão, chave estrangeira) são
+ * barrados antes, com 400/422. No Oracle (npm run test:oracle) isso evita um erro 500.
+ */
+describe('limites do banco conferidos antes de gravar', () => {
+  it('ids na URL, prêmios, reagendamento e súmula fora dos limites', async () => {
+    const { call, tokens } = await makeApp()
+    const team = { name: 'Maresia', short: 'MAR', color: '#3b82f6', coach: 'Rita', players: [] }
+    expect((await call('PUT', `/torneios/t2/times/${'x'.repeat(65)}`, tokens.org, { team, modalityIds: [] })).statusCode).toBe(400)
+    expect((await call('PUT', '/torneios/t2/times/com%20espa%C3%A7o', tokens.org, { team, modalityIds: [] })).statusCode).toBe(400)
+    expect((await call('PUT', `/torneios/t2/premios/${'p'.repeat(65)}`, tokens.org, { name: 'P', kind: 'coletivo', place: 1 })).statusCode).toBe(400)
+
+    const prize = (p: Record<string, unknown>) => call('PUT', '/torneios/t2/premios/novo', tokens.org, { name: 'P', kind: 'coletivo', place: 1, ...p })
+    expect((await prize({ modalityId: 'nao-existe' })).json().message).toBe('Modalidade do prêmio não existe neste torneio.')
+    expect((await prize({ value: 1e11 })).json().message).toBe('Valor alto demais.')
+    expect((await prize({ kind: 'individual', place: 500 })).json().message).toBe('Ordem do prêmio individual inválida.')
+
+    const t: Tournament = (await call('POST', '/torneios/t2/modalidades/t2m1/sorteio', tokens.org, {})).json()
+    const url = `/torneios/t2/partidas/${pending(t)[0].id}/agendamento`
+    const fora = await call('PUT', url, tokens.org, { date: '2026-12-05', time: '20:00', venue: 'Quadra inventada', referee: 'Paula Reis' })
+    expect(fora.statusCode).toBe(422)
+    expect(fora.json().message).toBe('Quadra inventada não é um espaço desta modalidade.')
+
+    const futsal = (await call('GET', '/torneios/t1')).json().modalities.find((m: { kind: string }) => m.kind === 'pontos')
+    const m = futsal.matches.find((x: Match) => !x.bye && x.status !== 'encerrada' && x.a && x.b)
+    const sumula = await call('POST', `/torneios/t1/modalidades/${futsal.id}/partidas/${m.id}/sumula`, tokens.org, { sumula: { kind: 'pontos', a: 10000, b: 0, cards: [] } })
+    expect(sumula.statusCode).toBe(422)
+    expect(sumula.json().message).toBe('Placar deve ter números inteiros de 0 a 9999.')
+  })
+})

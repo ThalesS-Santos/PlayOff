@@ -20,12 +20,14 @@ export interface AppOptions {
   logger?: boolean
   /** pedidos por IP a cada `windowMs`: qualquer rota (`max`) e login/cadastro (`authMax`) */
   rateLimit?: { max: number; authMax: number; windowMs: number }
+  /** atrás de proxy: sem isso, todos os usuários teriam o IP do proxy (e dividiriam o limite) */
+  trustProxy?: boolean
 }
 
 export const DEFAULT_RATE_LIMIT = { max: 600, authMax: 10, windowMs: 60_000 }
 
-export function buildApp({ repo, jwtSecret, corsOrigin = 'http://localhost:5173', logger = false, rateLimit: limits = DEFAULT_RATE_LIMIT }: AppOptions) {
-  const app = Fastify({ logger, bodyLimit: 1_000_000 })
+export function buildApp({ repo, jwtSecret, corsOrigin = 'http://localhost:5173', logger = false, rateLimit: limits = DEFAULT_RATE_LIMIT, trustProxy = false }: AppOptions) {
+  const app = Fastify({ logger, bodyLimit: 1_000_000, trustProxy })
   app.register(cors, { origin: corsOrigin })
   // cabeçalhos de segurança; a resposta é lida por outra origem (o frontend), liberada pelo CORS
   app.register(helmet, { crossOriginResourcePolicy: { policy: 'cross-origin' } })

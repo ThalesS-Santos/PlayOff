@@ -21,7 +21,7 @@ import {
 } from '../domain'
 import { manage } from '../http'
 import type { Repo } from '../repo/types'
-import { Draw, PrizeBody, RefereeBody, Slot, SumulaBody, TeamBody, Transition } from '../schemas'
+import { ClientId, Draw, PrizeBody, RefereeBody, Slot, SumulaBody, TeamBody, Transition } from '../schemas'
 
 /* Gestão do torneio (só o organizador dono): ciclo de vida, sorteio, agenda, súmulas e cadastros. */
 
@@ -63,7 +63,7 @@ export const manageRoutes: FastifyPluginAsync<{ repo: Repo }> = async (app, { re
 
   app.put<P<'id' | 'tid'>>(`${T}/times/:tid`, (req, reply) => {
     const { team, modalityIds } = TeamBody.parse(req.body)
-    const full = { ...team, id: req.params.tid }
+    const full = { ...team, id: ClientId.parse(req.params.tid) }
     return run(req, reply, req.params.id, (t) => upsertTeam(t, checked(validateTeam(full, t), full), modalityIds))
   })
   app.delete<P<'id' | 'tid'>>(`${T}/times/:tid`, (req, reply) => run(req, reply, req.params.id, (t) => removeTeam(t, req.params.tid)))
@@ -77,8 +77,8 @@ export const manageRoutes: FastifyPluginAsync<{ repo: Repo }> = async (app, { re
   app.delete<P<'id' | 'nome'>>(`${T}/arbitros/:nome`, (req, reply) => run(req, reply, req.params.id, (t) => removeReferee(t, req.params.nome)))
 
   app.put<P<'id' | 'pzid'>>(`${T}/premios/:pzid`, (req, reply) => {
-    const prize = { ...PrizeBody.parse(req.body), id: req.params.pzid }
-    return run(req, reply, req.params.id, (t) => upsertPrize(t, checked(validatePrize(prize), prize)))
+    const prize = { ...PrizeBody.parse(req.body), id: ClientId.parse(req.params.pzid) }
+    return run(req, reply, req.params.id, (t) => upsertPrize(t, checked(validatePrize(prize, t), prize)))
   })
   app.delete<P<'id' | 'pzid'>>(`${T}/premios/:pzid`, (req, reply) => run(req, reply, req.params.id, (t) => removePrize(t, req.params.pzid)))
 }

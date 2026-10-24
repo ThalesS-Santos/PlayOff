@@ -109,6 +109,12 @@ export interface TournamentDetails {
   accessCode?: string
 }
 
+/** Lista com nome em branco ou repetido (sem diferenciar maiúsculas nem espaços nas pontas). */
+const hasBlankOrRepeated = (names: string[]) => {
+  const keys = names.map((n) => n.trim().toLocaleLowerCase('pt-BR'))
+  return keys.some((k, i) => !k || keys.indexOf(k) !== i)
+}
+
 /** Validação dos dados básicos (criar e editar torneio), incluindo nome único por organizador (RN02). */
 export function validateDetails(d: TournamentDetails, others: Tournament[], organizerId: string, selfId?: string): string[] {
   const e: string[] = []
@@ -118,6 +124,7 @@ export function validateDetails(d: TournamentDetails, others: Tournament[], orga
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(d.endDate)) e.push('Informe as datas de início e fim.')
   else if (d.endDate < d.startDate) e.push('A data final deve ser depois da inicial.')
   if (!d.venues.length) e.push('Informe ao menos uma quadra ou espaço.')
+  else if (hasBlankOrRepeated(d.venues)) e.push('Quadras e espaços não podem ter nome vazio ou repetido.')
   if (d.visibility === 'privado' && (d.accessCode ?? '').trim().length < 4) e.push('Torneio privado precisa de um código com 4+ caracteres.')
   return e
 }
@@ -126,9 +133,10 @@ export function validateDetails(d: TournamentDetails, others: Tournament[], orga
  * Edita os dados do torneio (caso de uso "Editar torneio"). Se o período ou os espaços
  * mudarem, as partidas pendentes não fixadas são reagendadas.
  */
-export function editDetails(t: Tournament, d: TournamentDetails, others: Tournament[]): Tournament {
-  const errors = validateDetails(d, others, t.organizerId, t.id)
+export function editDetails(t: Tournament, details: TournamentDetails, others: Tournament[]): Tournament {
+  const errors = validateDetails(details, others, t.organizerId, t.id)
   if (errors.length) throw new Error(errors[0])
+  const d = { ...details, venues: details.venues.map((v) => v.trim()) }
   const next: Tournament = {
     ...t,
     name: d.name.trim(),
@@ -185,6 +193,7 @@ export function draftStepErrors(step: number, d: TournamentDraft, others: Tourna
   if (step === 0) {
     e.push(...validateDetails(d, others, organizerId))
     if (!d.referees.length) e.push('Informe ao menos um árbitro.')
+    else if (hasBlankOrRepeated(d.referees)) e.push('Árbitros não podem ter nome vazio ou repetido.')
   }
   if (step === 1) {
     if (!d.modalities.length) e.push('Adicione pelo menos uma modalidade.')
@@ -250,8 +259,8 @@ export function createTournament(d: TournamentDraft, organizer: User, others: To
     endDate: d.endDate,
     city: d.city.trim(),
     venueName: d.venueName.trim(),
-    venues: d.venues,
-    referees: d.referees,
+    venues: d.venues.map((v) => v.trim()),
+    referees: d.referees.map((r) => r.trim()),
     cover: d.cover,
     teams,
     modalities,

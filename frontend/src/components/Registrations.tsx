@@ -280,7 +280,7 @@ function PrizesPanel({ t }: { t: Tournament }) {
   }
   const save = async () => {
     if (!editing) return
-    const errs = validatePrize(editing)
+    const errs = validatePrize(editing, t)
     setErrors(errs)
     if (errs.length) return
     if (!(await savePrize(t.id, editing))) return

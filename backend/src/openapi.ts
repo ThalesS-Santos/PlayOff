@@ -1,5 +1,4 @@
-import type { ZodTypeAny } from 'zod'
-import { zodToJsonSchema } from 'zod-to-json-schema'
+import { z } from 'zod'
 import { AccessBody, Draw, Login, OrgUpdate, PrizeBody, RefereeBody, Register, Slot, SumulaBody, TeamBody, TournamentDetails, TournamentDraft, Transition } from './schemas'
 
 /*
@@ -19,7 +18,7 @@ interface RouteDoc {
   tag: string
   summary: string
   access: Access
-  body?: ZodTypeAny
+  body?: z.ZodType
   /** status de sucesso, quando não é 200 */
   status?: number
 }
@@ -87,7 +86,7 @@ export function openApiDocument() {
       description: ACCESS_NOTE[r.access],
       ...(r.access === 'publico' ? {} : { security: [{ token: [] }] }),
       ...(params.length ? { parameters: params } : {}),
-      ...(r.body ? { requestBody: { required: true, content: { 'application/json': { schema: zodToJsonSchema(r.body, { target: 'openApi3', $refStrategy: 'none' }) } } } } : {}),
+      ...(r.body ? { requestBody: { required: true, content: { 'application/json': { schema: z.toJSONSchema(r.body, { target: 'openapi-3.0', io: 'input' }) } } } } : {}),
       responses,
     }
   }

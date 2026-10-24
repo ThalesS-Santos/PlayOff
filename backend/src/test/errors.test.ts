@@ -86,6 +86,20 @@ describe('proteções da API', () => {
     expect((await reg(9)).statusCode).toBe(429)
   })
 
+  it('atrás de proxy, o limite é por IP real (X-Forwarded-For), não um só para todos', async () => {
+    const limits = { max: 100, authMax: 1, windowMs: 60_000 }
+    const login = (app: ReturnType<typeof buildApp>, ip: string) =>
+      app.inject({ method: 'POST', url: '/api/v1/auth/login', headers: { 'x-forwarded-for': ip }, payload: { email: 'a@b.com', password: 'errada123' } })
+    const proxied = buildApp({ repo: new MemoryRepo(), jwtSecret: SECRET, rateLimit: limits, trustProxy: true })
+    expect((await login(proxied, '10.0.0.1')).statusCode).toBe(401)
+    expect((await login(proxied, '10.0.0.2')).statusCode).toBe(401)
+    expect((await login(proxied, '10.0.0.1')).statusCode).toBe(429)
+    // sem trustProxy o cabeçalho é ignorado (não dá para fugir do limite trocando-o)
+    const direct = buildApp({ repo: new MemoryRepo(), jwtSecret: SECRET, rateLimit: limits })
+    expect((await login(direct, '10.0.0.1')).statusCode).toBe(401)
+    expect((await login(direct, '10.0.0.2')).statusCode).toBe(429)
+  })
+
   it('limite geral por IP vale para todas as rotas', async () => {
     const app = buildApp({ repo: new MemoryRepo(), jwtSecret: SECRET, rateLimit: { max: 2, authMax: 2, windowMs: 60_000 } })
     const get = () => app.inject({ method: 'GET', url: '/api/v1/organizacoes' })

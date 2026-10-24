@@ -99,15 +99,17 @@ frontend/
                           registry (cadastros), permissions, state (reducer), format
   src/components/         componentes de interface
   src/pages/              telas
-  src/test/               testes de interface
+  src/test/               testes de interface (inclusive contra o backend real)
+  e2e/                    testes de ponta a ponta (Playwright)
 backend/
-  src/                    API (Fastify): rotas, autenticação, repositórios (memória e Oracle)
+  src/                    API (Fastify): rotas, autenticação, repositórios (memória e Oracle), /docs
+  src/test/               testes da API (os mesmos rodam contra o Oracle no CI)
   db/                     scripts SQL do Oracle
 .github/workflows/ci.yml  integração contínua
 ```
 
 ## Documentação
 
-- [`docs/Relatorio Geral.md`](docs/Relatorio%20Geral.md): visão geral, regras de negócio, modelo de dados, arquitetura proposta e roadmap
+- [`docs/Relatorio Geral.md`](docs/Relatorio%20Geral.md): visão geral, regras de negócio, modelo de dados, arquitetura proposta e roadmap. A arquitetura sugerida ali (PostgreSQL, NestJS) foi uma proposta; a implementação usa **Oracle** e **Fastify**, por escolha da equipe.
 - [`docs/Requisitos Funcionais_PlayOff.pdf`](docs/Requisitos%20Funcionais_PlayOff.pdf): RF01 a RF07
 - [`docs/PlayOff.pdf`](docs/PlayOff.pdf): DER, modelo relacional e diagramas UML

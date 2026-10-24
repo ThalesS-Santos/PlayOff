@@ -37,14 +37,14 @@ describe('token', () => {
 describe('configuração', () => {
   it('padrões de desenvolvimento', () => {
     const c = loadConfig({})
-    expect(c).toMatchObject({ port: 3333, host: '127.0.0.1', repo: 'memory', corsOrigin: 'http://localhost:5173' })
+    expect(c).toMatchObject({ port: 3333, host: '127.0.0.1', repo: 'memory', corsOrigin: 'http://localhost:5173', trustProxy: false })
     expect(c.jwtSecret).toHaveLength(64)
   })
   it('produção exige segredo; Oracle exige credenciais', () => {
     expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(/JWT_SECRET/)
     expect(() => loadConfig({ PLAYOFF_REPO: 'oracle' })).toThrow(/ORACLE_USER/)
-    const c = loadConfig({ NODE_ENV: 'production', JWT_SECRET: 's', PLAYOFF_REPO: 'oracle', ORACLE_USER: 'u', ORACLE_PASSWORD: 'p', ORACLE_CONNECT_STRING: 'h/x', PORT: '8080', HOST: '0.0.0.0', CORS_ORIGIN: 'https://app' })
-    expect(c).toMatchObject({ port: 8080, host: '0.0.0.0', jwtSecret: 's', repo: 'oracle', corsOrigin: 'https://app', oracle: { user: 'u', password: 'p', connectString: 'h/x' } })
+    const c = loadConfig({ NODE_ENV: 'production', JWT_SECRET: 's', PLAYOFF_REPO: 'oracle', ORACLE_USER: 'u', ORACLE_PASSWORD: 'p', ORACLE_CONNECT_STRING: 'h/x', PORT: '8080', HOST: '0.0.0.0', CORS_ORIGIN: 'https://app', TRUST_PROXY: 'true' })
+    expect(c).toMatchObject({ port: 8080, host: '0.0.0.0', jwtSecret: 's', repo: 'oracle', corsOrigin: 'https://app', trustProxy: true, oracle: { user: 'u', password: 'p', connectString: 'h/x' } })
   })
 })
 

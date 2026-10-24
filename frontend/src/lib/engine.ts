@@ -502,23 +502,29 @@ export function standings(group: Group, matches: Match[]): Standing[] {
 }
 
 /** Problemas de preenchimento da súmula (valores negativos, set empatado, tempos inválidos). */
+/** Limites da súmula: placar até 9999; set, pênaltis e minuto até 999; tempo até 100 dias. */
+export const MAX_SCORE = 9999
+export const MAX_SET = 999
+export const MAX_TIME_MS = 100 * 24 * 3600 * 1000
+
 export function sumulaErrors(s: Sumula, m?: Match): string[] {
   const e: string[] = []
-  const bad = (n: number) => !Number.isInteger(n) || n < 0
+  // inteiro de 0 até o limite (os limites são os das colunas do banco)
+  const bad = (n: number, max: number) => !Number.isInteger(n) || n < 0 || n > max
   if (s.kind === 'pontos') {
-    if (bad(s.a) || bad(s.b)) e.push('Placar deve ter números inteiros não negativos.')
-    if ((s.penA != null && bad(s.penA)) || (s.penB != null && bad(s.penB))) e.push('Pênaltis devem ser números inteiros não negativos.')
+    if (bad(s.a, MAX_SCORE) || bad(s.b, MAX_SCORE)) e.push(`Placar deve ter números inteiros de 0 a ${MAX_SCORE}.`)
+    if ((s.penA != null && bad(s.penA, MAX_SET)) || (s.penB != null && bad(s.penB, MAX_SET))) e.push(`Pênaltis devem ser números inteiros de 0 a ${MAX_SET}.`)
   }
   if (s.kind === 'set') {
     if (!s.sets.length) e.push('Informe ao menos um set.')
     s.sets.forEach(([x, y], i) => {
-      if (bad(x) || bad(y)) e.push(`Set ${i + 1}: use números inteiros não negativos.`)
+      if (bad(x, MAX_SET) || bad(y, MAX_SET)) e.push(`Set ${i + 1}: use números inteiros de 0 a ${MAX_SET}.`)
       else if (x === y) e.push(`Set ${i + 1} empatado: todo set tem um vencedor.`)
     })
   }
-  if (s.kind !== 'colocacao' && s.cards.some((c) => !c.playerId || bad(c.minute))) e.push('Cartão sem atleta ou com minuto inválido.')
+  if (s.kind !== 'colocacao' && s.cards.some((c) => !c.playerId || bad(c.minute, MAX_SET))) e.push('Cartão sem atleta ou com minuto inválido.')
   if (s.kind === 'colocacao') {
-    if (s.entries.some((x) => !Number.isFinite(x.timeMs) || x.timeMs <= 0)) e.push('Todos os tempos devem ser maiores que zero.')
+    if (s.entries.some((x) => !Number.isInteger(x.timeMs) || x.timeMs <= 0 || x.timeMs > MAX_TIME_MS)) e.push('Todos os tempos devem ser maiores que zero (e menores que 100 dias).')
     if (m?.participants && (s.entries.length !== m.participants.length || s.entries.some((x) => !m.participants!.includes(x.teamId))))
       e.push('A súmula deve trazer o tempo de todos os participantes.')
   }
@@ -756,6 +762,8 @@ export function slotConflicts(t: Tournament, matchId: string, slot: Slot): strin
   const reasons: string[] = []
   if (!tournamentDays(t).includes(slot.date)) reasons.push('Data fora do período do torneio.')
   if (!SLOTS.includes(slot.time)) reasons.push('Horário fora da grade.')
+  if (!(mod.venues?.length ? mod.venues : t.venues).includes(slot.venue)) reasons.push(`${slot.venue || 'Local'} não é um espaço desta modalidade.`)
+  if (!t.referees.includes(slot.referee)) reasons.push(`${slot.referee || 'Árbitro'} não é árbitro deste torneio.`)
   const teams = (m: Match) => (m.participants ?? [m.a, m.b]).filter(Boolean) as string[]
   const mine = teams(match)
   for (const md of t.modalities)

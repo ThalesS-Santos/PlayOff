@@ -92,7 +92,8 @@ describe('assistente "Criar torneio" (RF01)', () => {
     expect(t.modalities.every((m) => m.matches.length > 0)).toBe(true)
     expect(t.prizes).toMatchObject([{ modalityId: t.modalities[0].id }, { name: 'Melhor goleiro', kind: 'individual', value: 50 }])
     expect(t.modalities[0].seeds).toHaveLength(1)
-  })
+    // o fluxo inteiro do assistente leva ~14 s sozinho; com a máquina carregada passava dos 20 s padrão
+  }, 60_000)
 
   it('sem sortear agora: publica com inscrições abertas; cancelar volta', async () => {
     vi.useFakeTimers(FAKE_TIMERS)

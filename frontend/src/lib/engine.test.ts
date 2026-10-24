@@ -10,6 +10,9 @@ import {
   generateGroups,
   generateMatches,
   groupCountOptions,
+  MAX_SCORE,
+  MAX_SET,
+  MAX_TIME_MS,
   placeOf,
   reschedule,
   resultLocked,
@@ -270,6 +273,19 @@ describe('reagendamento manual', () => {
     expect(r.some((s) => s.includes('apita'))).toBe(true)
   })
 
+  it('local e árbitro precisam ser do torneio (o servidor não confia na tela)', () => {
+    const t = base()
+    const x = t.modalities[0].matches.find((m) => m.groupId)!
+    const slot = { date: '2026-11-19', time: '20:00', venue: 'Q1', referee: 'R1' }
+    expect(slotConflicts(t, x.id, { ...slot, venue: 'Quadra inventada' })).toContain('Quadra inventada não é um espaço desta modalidade.')
+    expect(slotConflicts(t, x.id, { ...slot, referee: '' })).toContain('Árbitro não é árbitro deste torneio.')
+    expect(slotConflicts(t, x.id, slot).join()).not.toMatch(/não é/)
+    // modalidade com espaços próprios: só eles valem
+    const own = { ...t, modalities: [{ ...t.modalities[0], venues: ['Q2'] }] }
+    expect(slotConflicts(own, x.id, slot)).toContain('Q1 não é um espaço desta modalidade.')
+    expect(() => reschedule(t, x.id, { ...slot, venue: 'Lua' })).toThrow('Lua não é um espaço desta modalidade.')
+  })
+
   it('não deixa o mata-mata antes da fase de grupos', () => {
     const t = base()
     const final = t.modalities[0].matches.find((m) => !m.groupId && !m.nextMatchId)!
@@ -302,20 +318,30 @@ describe('reagendamento manual', () => {
 describe('validação da súmula', () => {
   it('pontos, pênaltis e cartões', () => {
     expect(sumulaErrors(win(2, 1))).toEqual([])
-    expect(sumulaErrors(win(-1, 1.5))).toEqual(['Placar deve ter números inteiros não negativos.'])
-    expect(sumulaErrors({ ...win(1, 1), penA: -1, penB: 2 } as Sumula)).toEqual(['Pênaltis devem ser números inteiros não negativos.'])
+    expect(sumulaErrors(win(-1, 1.5))).toEqual(['Placar deve ter números inteiros de 0 a 9999.'])
+    expect(sumulaErrors({ ...win(1, 1), penA: -1, penB: 2 } as Sumula)).toEqual(['Pênaltis devem ser números inteiros de 0 a 999.'])
+    // limites das colunas do banco: o maior valor passa, o seguinte é recusado
+    expect(sumulaErrors(win(MAX_SCORE, 0))).toEqual([])
+    expect(sumulaErrors(win(MAX_SCORE + 1, 0))).toHaveLength(1)
+    expect(sumulaErrors({ ...win(1, 1), penA: MAX_SET + 1, penB: 0 } as Sumula)).toHaveLength(1)
+    expect(sumulaErrors({ kind: 'pontos', a: 1, b: 0, cards: [{ teamId: 'a', playerId: 'p', color: 'amarelo', minute: MAX_SET }] })).toEqual([])
+    expect(sumulaErrors({ kind: 'pontos', a: 1, b: 0, cards: [{ teamId: 'a', playerId: 'p', color: 'amarelo', minute: MAX_SET + 1 }] })).toEqual(['Cartão sem atleta ou com minuto inválido.'])
     expect(sumulaErrors({ kind: 'pontos', a: 1, b: 0, cards: [{ teamId: 'a', playerId: '', color: 'amarelo', minute: 3 }] })).toEqual(['Cartão sem atleta ou com minuto inválido.'])
   })
 
   it('sets: sem sets, set empatado ou negativo', () => {
     expect(sumulaErrors({ kind: 'set', sets: [], cards: [] })).toEqual(['Informe ao menos um set.'])
-    expect(sumulaErrors({ kind: 'set', sets: [[25, 25], [-1, 3]], cards: [] })).toEqual(['Set 1 empatado: todo set tem um vencedor.', 'Set 2: use números inteiros não negativos.'])
+    expect(sumulaErrors({ kind: 'set', sets: [[25, 25], [-1, 3]], cards: [] })).toEqual(['Set 1 empatado: todo set tem um vencedor.', 'Set 2: use números inteiros de 0 a 999.'])
+    expect(sumulaErrors({ kind: 'set', sets: [[MAX_SET + 1, 0]], cards: [] })).toEqual(['Set 1: use números inteiros de 0 a 999.'])
   })
 
   it('colocação: tempos positivos e todos os participantes', () => {
     const m: Match = { id: 'p', phase: 'Final', round: 1, slot: 0, participants: ['A', 'B'], status: 'agendada' }
     expect(sumulaErrors({ kind: 'colocacao', entries: [{ teamId: 'A', timeMs: 1 }, { teamId: 'B', timeMs: 2 }] }, m)).toEqual([])
-    expect(sumulaErrors({ kind: 'colocacao', entries: [{ teamId: 'A', timeMs: 0 }] }, m)).toEqual(['Todos os tempos devem ser maiores que zero.', 'A súmula deve trazer o tempo de todos os participantes.'])
+    expect(sumulaErrors({ kind: 'colocacao', entries: [{ teamId: 'A', timeMs: 0 }] }, m)).toEqual(['Todos os tempos devem ser maiores que zero (e menores que 100 dias).', 'A súmula deve trazer o tempo de todos os participantes.'])
+    for (const timeMs of [1.5, MAX_TIME_MS + 1])
+      expect(sumulaErrors({ kind: 'colocacao', entries: [{ teamId: 'A', timeMs }, { teamId: 'B', timeMs: 2 }] }, m)).toHaveLength(1)
+    expect(sumulaErrors({ kind: 'colocacao', entries: [{ teamId: 'A', timeMs: MAX_TIME_MS }, { teamId: 'B', timeMs: 2 }] }, m)).toEqual([])
     expect(sumulaErrors({ kind: 'colocacao', entries: [{ teamId: 'A', timeMs: 1 }, { teamId: 'X', timeMs: 2 }] }, m)).toEqual(['A súmula deve trazer o tempo de todos os participantes.'])
   })
 
@@ -327,7 +353,7 @@ describe('validação da súmula', () => {
     expect(() => applySumula(m, 'nada', win(1, 0))).toThrow(/não encontrada/)
     expect(() => applySumula(m, bye.id, win(1, 0))).toThrow(/bye/)
     expect(() => applySumula(m, final.id, win(1, 0))).toThrow(/adversários/)
-    expect(() => applySumula(m, real.id, win(-2, 0))).toThrow(/não negativos/)
+    expect(() => applySumula(m, real.id, win(-2, 0))).toThrow(/de 0 a 9999/)
   })
 })
 

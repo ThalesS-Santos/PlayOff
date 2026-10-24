@@ -11,6 +11,7 @@ import {
   toggleSeed,
   upsertPrize,
   upsertTeam,
+  MAX_PRIZE_VALUE,
   validatePrize,
   validateReferee,
   validateTeam,
@@ -99,6 +100,13 @@ describe('prêmios', () => {
   it('valida nome, colocação e valor', () => {
     expect(validatePrize(prize())).toEqual([])
     expect(validatePrize(prize({ name: ' ', place: 0, value: -5 }))).toHaveLength(3)
+    // limites do banco e modalidade existente
+    expect(validatePrize(prize({ value: MAX_PRIZE_VALUE }))).toEqual([])
+    expect(validatePrize(prize({ value: MAX_PRIZE_VALUE + 1 }))).toEqual(['Valor alto demais.'])
+    expect(validatePrize(prize({ kind: 'individual', place: 100 }))).toEqual(['Ordem do prêmio individual inválida.'])
+    expect(validatePrize(prize({ kind: 'individual', place: 2 }))).toEqual([])
+    expect(validatePrize(prize({ modalityId: 'm1' }), tournament())).toEqual([])
+    expect(validatePrize(prize({ modalityId: 'nada' }), tournament())).toEqual(['Modalidade do prêmio não existe neste torneio.'])
   })
 
   it('entrega ao campeão da modalidade quando ela termina', () => {
