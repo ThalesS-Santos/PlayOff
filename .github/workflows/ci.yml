@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, devops]
   pull_request:
 
 # um push novo cancela a verificação anterior do mesmo branch
