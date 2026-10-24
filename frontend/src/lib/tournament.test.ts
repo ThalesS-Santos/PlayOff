@@ -226,7 +226,7 @@ describe('criação de torneio (compartilhada com o servidor)', () => {
     expect(err({ modalities: [{ sport: 'F', kind: 'pontos', category: 'M', format: 'eliminacao', teams: ['A', ' a '], seeds: [] }] })).toThrow(/vazios ou repetidos/)
     expect(err({ modalities: [{ sport: 'F', kind: 'pontos', category: 'M', format: 'eliminacao', teams: ['A', 'B'], seeds: ['Z'] }] })).toThrow(/fora da lista/)
     expect(err({ prizes: [{ name: '', kind: 'coletivo', place: 1 }] })).toThrow(/Prêmio 1/)
-    expect(err({ generateNow: true, modalities: [{ sport: 'V', kind: 'set', category: 'F', format: 'dupla_eliminacao', teams: ['A', 'B', 'C'], seeds: [] }] })).toThrow(/dupla eliminação/)
+    expect(err({ generateNow: true, modalities: [{ sport: 'V', kind: 'set', category: 'F', format: 'dupla_eliminacao', teams: ['A', 'B'], seeds: [] }] })).toThrow(/dupla eliminação/)
   })
 
   it('pontos corridos guarda turno/returno; id e submodalidade opcionais', () => {

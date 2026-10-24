@@ -50,6 +50,10 @@ const fixDates = (r: Row, dateCols: string[]): Row => {
   return out
 }
 
+/** Linhas de um SELECT (o driver só deixa `rows` vazio em comandos que não são consulta). */
+const rowsOf = (r: oracledb.Result<Row>): Row[] => r.rows ?? []
+const first = (r: oracledb.Result<Row>): Row | undefined => rowsOf(r)[0]
+
 /** INSERT em lote com tipos explícitos (NULL na primeira linha não deixa o driver adivinhar). */
 async function insertAll(conn: oracledb.Connection, table: string, rows: Row[]) {
   if (!rows.length) return
@@ -83,13 +87,15 @@ export class OracleRepo implements Repo {
   async findUserByEmail(email: string) {
     return this.with(async (c) => {
       const r = await c.execute<Row>('SELECT * FROM USUARIO WHERE EMAIL = :email', { email: email.trim().toLowerCase() })
-      return r.rows?.[0] && toUser(r.rows[0])
+      const u = first(r)
+      return u && toUser(u)
     })
   }
   async findUser(id: string) {
     return this.with(async (c) => {
       const r = await c.execute<Row>('SELECT * FROM USUARIO WHERE ID = :id', { id })
-      return r.rows?.[0] && toUser(r.rows[0])
+      const u = first(r)
+      return u && toUser(u)
     })
   }
   async createUser(u: StoredUser) {
@@ -109,12 +115,13 @@ export class OracleRepo implements Repo {
   }
 
   async listOrgs() {
-    return this.with(async (c) => ((await c.execute<Row>('SELECT * FROM ORGANIZACAO ORDER BY NOME')).rows ?? []).map(toOrg))
+    return this.with(async (c) => rowsOf(await c.execute<Row>('SELECT * FROM ORGANIZACAO ORDER BY NOME')).map(toOrg))
   }
   async getOrg(id: string) {
     return this.with(async (c) => {
       const r = await c.execute<Row>('SELECT * FROM ORGANIZACAO WHERE ID = :id', { id })
-      return r.rows?.[0] && toOrg(r.rows[0])
+      const o = first(r)
+      return o && toOrg(o)
     })
   }
   async saveOrg(o: Organization) {
@@ -142,7 +149,7 @@ export class OracleRepo implements Repo {
    * quantidade de torneios (sem uma rodada de consultas para cada torneio).
    */
   private async loadTournaments(c: oracledb.Connection, where: string, binds: Record<string, string>) {
-    const heads = (await c.execute<Row>(`${selectWithDates('TORNEIO', where, ['DATA_INICIO', 'DATA_FIM'])} ORDER BY t.CRIADO_EM_MS DESC`, binds)).rows ?? []
+    const heads = rowsOf(await c.execute<Row>(`${selectWithDates('TORNEIO', where, ['DATA_INICIO', 'DATA_FIM'])} ORDER BY t.CRIADO_EM_MS DESC`, binds))
     if (!heads.length) return []
     const byId = new Map(heads.map((h) => [String(h.ID), { TORNEIO: fixDates(h, ['DATA_INICIO', 'DATA_FIM']) } as TournamentRows]))
     // as linhas filhas dos torneios escolhidos (o filtro do TORNEIO aplicado ao dono)
@@ -151,13 +158,13 @@ export class OracleRepo implements Repo {
       const dates = table === 'PARTIDA' ? ['DATA_PARTIDA'] : []
       for (const rows of byId.values()) rows[table] = []
       const r = await c.execute<Row>(selectWithDates(table, `${OWNER[table]} IN (${owners})`, dates, `, ${OWNER[table]} AS ${OWNER_COL}`), binds)
-      for (const x of r.rows ?? []) {
+      for (const x of rowsOf(r)) {
         const { [OWNER_COL]: owner, ...row } = fixDates(x, dates)
         byId.get(String(owner))![table].push(row)
       }
     }
     const favs = new Map<string, string[]>()
-    for (const f of (await c.execute<Row>(`SELECT ID_USUARIO, ID_TORNEIO FROM FAVORITO WHERE ID_TORNEIO IN (${owners})`, binds)).rows ?? [])
+    for (const f of rowsOf(await c.execute<Row>(`SELECT ID_USUARIO, ID_TORNEIO FROM FAVORITO WHERE ID_TORNEIO IN (${owners})`, binds)))
       favs.set(String(f.ID_TORNEIO), [...(favs.get(String(f.ID_TORNEIO)) ?? []), String(f.ID_USUARIO)])
     return [...byId].map(([id, rows]) => rowsToTournament(rows, favs.get(id) ?? []))
   }
@@ -167,7 +174,7 @@ export class OracleRepo implements Repo {
     const rows = tournamentToRows(t)
     await this.with(async (c) => {
       try {
-        const exists = ((await c.execute<Row>('SELECT 1 AS X FROM TORNEIO WHERE ID = :id', { id: t.id })).rows ?? []).length > 0
+        const exists = rowsOf(await c.execute<Row>('SELECT 1 AS X FROM TORNEIO WHERE ID = :id', { id: t.id })).length > 0
         if (exists) {
           const set = Object.keys(rows.TORNEIO).filter((k) => k !== 'ID').map((k) => `${k} = ${DATE_COLUMNS.has(k) ? `TO_DATE(:${k}, 'YYYY-MM-DD')` : `:${k}`}`)
           await c.execute(`UPDATE TORNEIO SET ${set.join(', ')} WHERE ID = :ID`, rows.TORNEIO)
@@ -216,7 +223,7 @@ export class OracleRepo implements Repo {
     )
   }
   async accessList(userId: string) {
-    return this.with(async (c) => ((await c.execute<Row>('SELECT ID_TORNEIO FROM ACESSO_TORNEIO WHERE ID_USUARIO = :u', { u: userId })).rows ?? []).map((r) => String(r.ID_TORNEIO)))
+    return this.with(async (c) => rowsOf(await c.execute<Row>('SELECT ID_TORNEIO FROM ACESSO_TORNEIO WHERE ID_USUARIO = :u', { u: userId })).map((r) => String(r.ID_TORNEIO)))
   }
 
   async ping() {

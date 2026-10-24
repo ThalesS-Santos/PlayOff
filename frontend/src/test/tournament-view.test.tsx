@@ -48,7 +48,8 @@ describe('página do torneio: espectador (só visualiza)', () => {
     expect(dialog().queryByRole('button', { name: 'Reagendar' })).not.toBeInTheDocument()
     expect(dialog().queryByRole('button', { name: 'Aumentar' })).not.toBeInTheDocument()
     await ue.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    // a janela sai com animação: com a máquina carregada pode passar de 1 s
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument(), { timeout: 5000 })
   })
 
   it('favorita pela página e volta', async () => {

@@ -14,6 +14,8 @@ npm run dev
 
 A API sobe em http://127.0.0.1:3333 com os dados de demonstração em memória (somem ao reiniciar).
 
+**Documentação interativa:** http://127.0.0.1:3333/docs (Swagger). Lá dá para ver cada rota, o formato dos dados e testar: faça login em `/auth/login` e cole o token em **Authorize**. A especificação OpenAPI fica em `/docs/json`.
+
 Usuários de demonstração, todos com a senha `playoff123`:
 
 | E-mail | Perfil |
@@ -27,12 +29,14 @@ Para usar o Oracle, veja [db/README.md](db/README.md).
 ## Comandos
 
 ```bash
-npm test          # testes + cobertura (falha abaixo de 95%)
-npm run lint      # falha com qualquer aviso
+npm test            # testes + cobertura (falha abaixo de 95%)
+npm run lint        # falha com qualquer aviso
 npm run typecheck
-npm run build     # gera dist/server.js
-npm start         # roda o build
-npm run db:seed   # carrega a demonstração no Oracle
+npm run build       # gera dist/server.js
+npm start           # roda o build
+npm run db:schema   # (re)cria as tabelas no Oracle (apaga os dados!)
+npm run db:seed     # carrega a demonstração no Oracle
+npm run test:oracle # os mesmos testes da API, gravando num Oracle de verdade
 ```
 
 ## API (`/api/v1`)
@@ -47,7 +51,9 @@ Autenticação: cabeçalho `Authorization: Bearer <token>`. Erros sempre como `{
 | 404 | Não encontrado |
 | 409 | E-mail já cadastrado |
 | 422 `regra` | Regra de negócio violada (ex.: "Set 1 empatado: todo set tem um vencedor.") |
-| 429 | Muitas tentativas de código de acesso |
+| 429 | Muitas tentativas: código de acesso errado 5 vezes, mais de 10 logins ou cadastros por minuto do mesmo IP, ou mais de 600 pedidos por minuto |
+
+Toda resposta traz cabeçalhos de segurança (`helmet`): `X-Content-Type-Options`, `Strict-Transport-Security`, `Content-Security-Policy` e outros.
 
 ### Conta e organização
 
@@ -92,7 +98,8 @@ Ao ler um torneio, o código de acesso só aparece para o dono, e `favoritedBy` 
 ```
 src/
   domain.ts        regras de negócio (as mesmas do frontend)
-  app.ts           montagem da API, identificação do usuário, tratamento de erros
+  app.ts           montagem da API, identificação do usuário, tratamento de erros, limites e cabeçalhos
+  openapi.ts       documentação das rotas (gerada a partir dos esquemas zod)
   http.ts          erros HTTP e checagens de permissão (canView/canManage)
   schemas.ts       formato dos dados de entrada (zod)
   routes/          auth, torneios, gestão

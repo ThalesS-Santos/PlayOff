@@ -84,6 +84,14 @@ describe(`repositório (${ORACLE ? 'Oracle' : 'memória'})`, () => {
     await repo.ping()
   })
 
+  it.runIf(ORACLE)('Oracle: outro erro do banco no cadastro não vira "e-mail duplicado"', async () => {
+    const repo = await emptyRepo()
+    // papel fora do CHECK da coluna PAPEL
+    const err = await repo.createUser({ ...user('u1', 'a@x.com'), role: 'admin' as StoredUser['role'], orgId: undefined }).catch((e: unknown) => e)
+    expect(err).not.toBeInstanceOf(DuplicateError)
+    expect(err).toMatchObject({ errorNum: 2290 }) // ORA-02290: CHECK violado
+  })
+
   it.runIf(ORACLE)('Oracle: gravação que falha não deixa nada pela metade', async () => {
     const repo = await seeded()
     const t = buildSeed()[0]

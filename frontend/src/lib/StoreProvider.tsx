@@ -45,11 +45,21 @@ export function StoreProvider({ children, apiUrl, fetchImpl }: StoreProviderProp
   }, [mode, state])
 
   const dismiss = useCallback((id: number) => setToasts((ts) => ts.filter((t) => t.id !== id)), [])
+  // fechamento automático dos avisos; cancelado se o app sair da tela antes
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>())
+  useEffect(() => {
+    const pending = timers.current
+    return () => pending.forEach(clearTimeout)
+  }, [])
   const toast = useCallback(
     (t: Omit<Toast, 'id'>) => {
       const id = Date.now() + Math.random()
       setToasts((ts) => [...ts.slice(-3), { ...t, id }])
-      setTimeout(() => dismiss(id), 3800)
+      const timer = setTimeout(() => {
+        timers.current.delete(timer)
+        dismiss(id)
+      }, 3800)
+      timers.current.add(timer)
     },
     [dismiss],
   )

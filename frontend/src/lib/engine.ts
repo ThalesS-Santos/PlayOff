@@ -258,16 +258,17 @@ export function generatePontosCorridos(modId: string, teamIds: string[], returno
 
 /* ───────────────────────── dupla eliminação ───────────────────────── */
 
-const isPow2 = (n: number) => n >= 1 && (n & (n - 1)) === 0
-
 /**
  * Chave dos vencedores + chave dos perdedores + grande final: cada time só é
- * eliminado ao perder duas vezes. Exige 4, 8, 16 ou 32 times (sem byes).
+ * eliminado ao perder duas vezes. De 3 a 32 times: faltando times para completar
+ * a chave, os melhores cabeças de chave folgam (bye) na 1ª rodada, como na
+ * eliminação simples.
  */
 export function generateDoubleElimination(modId: string, seeds: string[]): Match[] {
   const n = seeds.length
-  if (!isPow2(n) || n < 4 || n > 32) throw new Error('Dupla eliminação exige 4, 8, 16 ou 32 times.')
-  const k = Math.log2(n)
+  if (n < 3 || n > 32) throw new Error('Dupla eliminação exige de 3 a 32 times.')
+  const p = nextPow2(n)
+  const k = Math.log2(p)
   const gfId = `${modId}-gf`
 
   // chave dos vencedores: a mesma árvore da eliminação simples
@@ -284,25 +285,52 @@ export function generateDoubleElimination(modId: string, seeds: string[]): Match
   const losers: Match[] = []
   const lid = (j: number, i: number) => `${modId}-l${j}-${i}`
   const lRounds = 2 * k - 2
-  let size = n / 4
+  let size = p / 4
   for (let j = 1; j <= lRounds; j++) {
     if (j > 1 && j % 2 === 1) size /= 2
     for (let i = 0; i < size; i++) {
       const m: Match = { id: lid(j, i), phase: j === lRounds ? 'Final dos perdedores' : `Perdedores · R${j}`, round: j, slot: i, bracket: 'L', status: 'agendada' }
       if (j === lRounds) Object.assign(m, { nextMatchId: gfId, nextSide: 'b' })
       else Object.assign(m, j % 2 === 1 ? { nextMatchId: lid(j + 1, i), nextSide: 'a' } : { nextMatchId: lid(j + 1, Math.floor(i / 2)), nextSide: i % 2 ? 'b' : 'a' })
-      if (j === 1) Object.assign(m, { placeholderA: `Perd. V1-${i * 2 + 1}`, placeholderB: `Perd. V1-${i * 2 + 2}` })
-      else if (j % 2 === 0) {
-        // perdedores da rodada r da chave principal, em ordem invertida (evita revanche imediata)
-        const r = j / 2 + 1
-        const src = w(r, size - 1 - i)
-        Object.assign(src, { loserNextMatchId: m.id, loserNextSide: 'b' })
-        Object.assign(m, { placeholderA: `Venc. P${j - 1}-${i + 1}`, placeholderB: `Perd. V${r}-${size - i}` })
-      } else Object.assign(m, { placeholderA: `Venc. P${j - 1}-${i * 2 + 1}`, placeholderB: `Venc. P${j - 1}-${i * 2 + 2}` })
+      // nas rodadas pares entram os perdedores da rodada r da chave principal, em ordem
+      // invertida (evita revanche imediata)
+      if (j % 2 === 0) Object.assign(w(j / 2 + 1, size - 1 - i), { loserNextMatchId: m.id, loserNextSide: 'b' })
       losers.push(m)
     }
   }
   winners.filter((m) => m.round === 1).forEach((m) => Object.assign(m, { loserNextMatchId: lid(1, Math.floor(m.slot / 2)), loserNextSide: m.slot % 2 ? 'b' : 'a' }))
+
+  // byes: quem folga não perde, então não manda ninguém para a chave dos perdedores.
+  // Partida dos perdedores que ficaria com um só time sai da chave e ele segue direto
+  // para a seguinte; sem nenhum time, só sai (e a seguinte é reavaliada).
+  for (const m of winners.filter((x) => x.bye)) {
+    delete m.loserNextMatchId
+    delete m.loserNextSide
+  }
+  for (let i = 0; i < losers.length; ) {
+    const m = losers[i]
+    const feeds = [...winners, ...losers].filter((x) => x.nextMatchId === m.id || x.loserNextMatchId === m.id)
+    if (feeds.length === 2) {
+      i++
+      continue
+    }
+    losers.splice(i, 1)
+    for (const f of feeds)
+      Object.assign(f, f.loserNextMatchId === m.id ? { loserNextMatchId: m.nextMatchId, loserNextSide: m.nextSide } : { nextMatchId: m.nextMatchId, nextSide: m.nextSide })
+    i = 0
+  }
+  // depois da poda: rodadas e posições da chave dos perdedores sem buracos, e cada
+  // lado rotulado por quem chega nele (perdedor da principal ou vencedor dos perdedores)
+  const lRoundsLeft = [...new Set(losers.map((m) => m.round))].sort((a, b) => a - b)
+  for (const [j, r] of lRoundsLeft.entries())
+    losers.filter((m) => m.round === r).forEach((m, i) => Object.assign(m, { round: j + 1, slot: i, phase: m.nextMatchId === gfId ? 'Final dos perdedores' : `Perdedores · R${j + 1}` }))
+  for (const m of losers)
+    for (const f of [...winners, ...losers]) {
+      const viaLoss = f.loserNextMatchId === m.id
+      if (!viaLoss && f.nextMatchId !== m.id) continue
+      const side = viaLoss ? f.loserNextSide : f.nextSide
+      m[side === 'a' ? 'placeholderA' : 'placeholderB'] = viaLoss ? `Perd. V${f.round}-${f.slot + 1}` : `Venc. P${f.round}-${f.slot + 1}`
+    }
 
   const gf: Match = { id: gfId, phase: 'Grande final', round: 1, slot: 0, bracket: 'F', status: 'agendada', placeholderA: 'Campeão dos vencedores', placeholderB: 'Campeão dos perdedores' }
   const all = [...winners, ...losers, gf]
@@ -319,7 +347,7 @@ export function generateDoubleElimination(modId: string, seeds: string[]): Match
 /** Problemas de quantidade de times para o formato escolhido. */
 export function formatErrors(format: Modality['format'], teams: number): string[] {
   if (teams < 2) return ['inscreva ao menos 2 times']
-  if (format === 'dupla_eliminacao' && (!isPow2(teams) || teams < 4 || teams > 32)) return ['dupla eliminação exige 4, 8, 16 ou 32 times']
+  if (format === 'dupla_eliminacao' && (teams < 3 || teams > 32)) return ['dupla eliminação exige de 3 a 32 times']
   return []
 }
 

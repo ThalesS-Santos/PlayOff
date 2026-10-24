@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { State } from '../lib/state'
 import type { Format } from '../lib/types'
-import { dialog, ORGANIZER, renderApp, savedTournament, SPECTATOR } from './utils'
+import { dialog, ORGANIZER, renderApp, saved, savedTournament, SPECTATOR } from './utils'
 
 /** Beach Tennis (t2, inscrições abertas) com outro formato e, opcionalmente, menos times. */
 const withFormat = (format: Format, teams?: number) => (s: State) => ({
@@ -31,11 +31,24 @@ describe('pontos corridos', () => {
 })
 
 describe('dupla eliminação', () => {
-  it('com 6 times o sorteio explica que precisa de 4, 8, 16 ou 32', async () => {
+  it('com 2 times o sorteio explica o mínimo e não sorteia', async () => {
+    const { ue } = renderApp('/torneios/t2', ORGANIZER, withFormat('dupla_eliminacao', 2))
+    await ue.click(await screen.findByRole('button', { name: /Sortear e gerar jogos/ }))
+    expect(dialog().getByText('dupla eliminação exige de 3 a 32 times')).toBeInTheDocument()
+    expect(dialog().queryByRole('button', { name: /Sortear e gerar jogos/ })).not.toBeInTheDocument()
+  })
+
+  it('com 6 times os 2 primeiros cabeças de chave folgam; a chave dos perdedores tem 4 jogos', async () => {
     const { ue } = renderApp('/torneios/t2', ORGANIZER, withFormat('dupla_eliminacao'))
     await ue.click(await screen.findByRole('button', { name: /Sortear e gerar jogos/ }))
-    expect(dialog().getByText('dupla eliminação exige 4, 8, 16 ou 32 times')).toBeInTheDocument()
-    expect(dialog().queryByRole('button', { name: /Sortear e gerar jogos/ })).not.toBeInTheDocument()
+    await ue.click(dialog().getByRole('button', { name: /Sortear e gerar jogos/ }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByText('Chave dos perdedores')).toBeInTheDocument()
+    const ms = savedTournament('t2').modalities[0].matches
+    expect(ms.filter((m) => m.bye)).toHaveLength(2)
+    expect(ms.filter((m) => m.bracket === 'L')).toHaveLength(4)
+    // 5 jogos na chave dos vencedores, 4 na dos perdedores e a grande final
+    expect(ms.filter((m) => !m.bye)).toHaveLength(10)
   })
 
   it('mostra as duas chaves e a grande final; o perdedor cai para a chave dos perdedores', async () => {
@@ -124,7 +137,7 @@ describe('calendário em grade (RF05)', () => {
 })
 
 describe('assistente com os formatos novos', () => {
-  it('pontos corridos com returno e dupla eliminação com quantidade inválida', async () => {
+  it('pontos corridos com returno e dupla eliminação com quantidade fora da potência de 2', async () => {
     const { ue } = renderApp('/criar', ORGANIZER)
     await ue.type(await screen.findByPlaceholderText(/Copa da Primavera/), 'Liga de Verão')
     await ue.click(screen.getByRole('button', { name: /Continuar/ }))
@@ -134,18 +147,19 @@ describe('assistente com os formatos novos', () => {
     await ue.selectOptions(formatoFutsal, 'pontos_corridos')
     await ue.click(screen.getByRole('checkbox'))
     await ue.selectOptions(formatoBasquete, 'dupla_eliminacao')
-    expect(screen.getByText(/exige 4, 8, 16 ou 32 equipes/)).toBeInTheDocument()
+    expect(screen.getByText(/aceita de 3 a 32 equipes/)).toBeInTheDocument()
     await ue.click(screen.getByRole('button', { name: /Continuar/ }))
     for (const b of screen.getAllByRole('button', { name: /Preencher exemplo/ })) await ue.click(b)
     await ue.click(screen.getAllByRole('button', { name: 'Remover Titãs' })[1]) // basquete fica com 7
     await ue.click(screen.getByRole('button', { name: /Continuar/ }))
     await ue.click(screen.getByRole('button', { name: /Continuar/ }))
     expect(screen.getByText(/Pontos corridos \(turno e returno\)/)).toBeInTheDocument()
-    await ue.click(within(screen.getByRole('main')).getByRole('button', { name: /Criar torneio/ }))
-    expect(screen.getByText(/Basquete: dupla eliminação exige 4, 8, 16 ou 32 times/)).toBeInTheDocument()
-    // sem sortear agora, pode criar e ajustar as inscrições depois
-    await ue.click(screen.getByRole('checkbox'))
+    // 7 times: sorteia na criação, com um bye para o 1º cabeça de chave
     await ue.click(within(screen.getByRole('main')).getByRole('button', { name: /Criar torneio/ }))
     expect(await screen.findByText('Torneio criado!')).toBeInTheDocument()
+    const basquete = saved().tournaments.find((t) => t.name === 'Liga de Verão')!.modalities[1]
+    expect(basquete).toMatchObject({ format: 'dupla_eliminacao', teamIds: expect.any(Array) })
+    expect(basquete.teamIds).toHaveLength(7)
+    expect(basquete.matches.filter((m) => m.bye)).toHaveLength(1)
   })
 })

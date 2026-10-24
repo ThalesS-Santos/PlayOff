@@ -401,21 +401,33 @@ describe('pontos corridos', () => {
 })
 
 describe('dupla eliminação', () => {
-  it.each([4, 8, 16, 32])('%i times: 2n-1 partidas, ninguém sai com uma derrota, campeão e pódio', (n) => {
+  it.each([3, 4, 5, 6, 7, 8, 11, 12, 16, 20, 32])('%i times: 2n-1 partidas, ninguém sai com uma derrota, campeão e pódio', (n) => {
     const m = generateMatches(mod({ format: 'dupla_eliminacao', teamIds: teams(n) }))
-    const W = m.matches.filter((x) => x.bracket === 'W')
+    const W = m.matches.filter((x) => x.bracket === 'W' && !x.bye)
     const L = m.matches.filter((x) => x.bracket === 'L')
     expect(W).toHaveLength(n - 1)
     expect(L).toHaveLength(n - 2)
+    expect(L.every((x) => !x.bye)).toBe(true)
     expect(m.matches.filter((x) => x.bracket === 'F')).toHaveLength(1)
-    // toda partida da chave principal manda o perdedor para a chave dos perdedores
+    // toda partida jogada da chave principal manda o perdedor para a chave dos perdedores; bye não
     expect(W.every((x) => x.loserNextMatchId && L.some((l) => l.id === x.loserNextMatchId))).toBe(true)
+    expect(m.matches.filter((x) => x.bye).every((x) => !x.loserNextMatchId)).toBe(true)
+    // cada partida dos perdedores recebe exatamente dois times, e cada lado tem um rótulo
+    for (const l of L) {
+      const feeds = m.matches.filter((x) => x.nextMatchId === l.id || x.loserNextMatchId === l.id)
+      expect(feeds, l.id).toHaveLength(2)
+      expect(l.placeholderA && l.placeholderB, l.id).toBeTruthy()
+    }
+    // rodadas dos perdedores numeradas a partir de 1 e posições sem buracos
+    const rounds = [...new Set(L.map((x) => x.round))].sort((a, b) => a - b)
+    expect(rounds).toEqual(rounds.map((_, i) => i + 1))
+    for (const r of rounds) expect(L.filter((x) => x.round === r).map((x) => x.slot)).toEqual(L.filter((x) => x.round === r).map((_, i) => i))
 
     const done = playAll(m)
     expect(done.matches.every((x) => x.status === 'encerrada')).toBe(true)
     // cada time perde no máximo duas vezes; só o campeão termina invicto ou com uma derrota
     const losses = new Map<string, number>()
-    for (const x of done.matches) {
+    for (const x of done.matches.filter((y) => !y.bye)) {
       const w = winnerOf(x)!
       const l = w === x.a ? x.b! : x.a!
       losses.set(l, (losses.get(l) ?? 0) + 1)
@@ -425,6 +437,17 @@ describe('dupla eliminação', () => {
     expect(losses.get('t1')).toBeUndefined()
     expect(placeOf(done, 2)).toEqual(['t2'])
     expect(placeOf(done, 3)).toHaveLength(1)
+  })
+
+  it('6 times: rótulos apontam para a partida certa depois da poda', () => {
+    const m = generateMatches(mod({ format: 'dupla_eliminacao', teamIds: teams(6) }))
+    const L = m.matches.filter((x) => x.bracket === 'L').map((x) => [x.phase, x.placeholderA, x.placeholderB])
+    expect(L).toEqual([
+      ['Perdedores · R1', 'Perd. V1-2', 'Perd. V2-2'],
+      ['Perdedores · R1', 'Perd. V1-4', 'Perd. V2-1'],
+      ['Perdedores · R2', 'Venc. P1-1', 'Venc. P1-2'],
+      ['Final dos perdedores', 'Venc. P2-1', 'Perd. V3-1'],
+    ])
   })
 
   it('quem perde na chave principal reaparece na chave dos perdedores', () => {
@@ -462,13 +485,14 @@ describe('dupla eliminação', () => {
   })
 
   it('quantidade de times', () => {
-    expect(formatErrors('dupla_eliminacao', 6)).toEqual(['dupla eliminação exige 4, 8, 16 ou 32 times'])
-    expect(formatErrors('dupla_eliminacao', 2)).toHaveLength(1)
-    expect(formatErrors('dupla_eliminacao', 64)).toHaveLength(1)
-    expect(formatErrors('dupla_eliminacao', 8)).toEqual([])
+    expect(formatErrors('dupla_eliminacao', 2)).toEqual(['dupla eliminação exige de 3 a 32 times'])
+    expect(formatErrors('dupla_eliminacao', 33)).toHaveLength(1)
+    expect(formatErrors('dupla_eliminacao', 3)).toEqual([])
+    expect(formatErrors('dupla_eliminacao', 6)).toEqual([])
     expect(formatErrors('eliminacao', 1)).toEqual(['inscreva ao menos 2 times'])
     expect(formatErrors('pontos_corridos', 3)).toEqual([])
-    expect(() => generateDoubleElimination('m', teams(6))).toThrow(/4, 8, 16 ou 32/)
+    expect(() => generateDoubleElimination('m', teams(2))).toThrow(/de 3 a 32/)
+    expect(() => generateDoubleElimination('m', teams(33))).toThrow(/de 3 a 32/)
   })
 })
 

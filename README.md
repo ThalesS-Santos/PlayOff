@@ -9,13 +9,13 @@ Projeto acadêmico. **Equipe:** Amanda Lordello, Davi Braz, Saulo Sousa, Thales 
 >   - **ligado à API**, com login real por e-mail e senha;
 >   - **demonstração**, sem servidor, com os dados no navegador, para apresentações.
 > - **Backend (API):** pronto e testado com dados em memória, com permissões no servidor e as mesmas regras do frontend.
-> - **Oracle:** esquema e repositório escritos, mas ainda não executados num banco real ([backend/db](backend/db/README.md)).
+> - **Oracle:** esquema e repositório testados num Oracle 23ai Free de verdade a cada push, no CI ([backend/db](backend/db/README.md)).
 
 ## Funcionalidades
 
 | Requisito | O que o protótipo faz |
 |---|---|
-| **RF01** Torneios personalizáveis | Assistente de criação; formatos **eliminação simples**, **dupla eliminação**, **fase de grupos + mata-mata**, **pontos corridos** (turno ou turno e returno) e **prova** (colocação); ciclo de vida *em criação → inscrições abertas → chaveamento definido → em andamento → finalizado / cancelado* |
+| **RF01** Torneios personalizáveis | Assistente de criação; formatos **eliminação simples**, **dupla eliminação** (3 a 32 times, com byes), **fase de grupos + mata-mata**, **pontos corridos** (turno ou turno e returno) e **prova** (colocação); ciclo de vida *em criação → inscrições abertas → chaveamento definido → em andamento → finalizado / cancelado* |
 | **RF02** Cadastro de times | Times com elenco (camisa, apelido), técnico, cor e sigla; árbitros; inscrição por modalidade; cabeças de chave |
 | **RF03** Chaveamento e súmulas | Sorteio com cabeças de chave e byes; nº de grupos e classificados configuráveis; súmulas de **pontos** (com pênaltis e cartões), **sets** e **colocação/tempo**; o vencedor avança sozinho na chave |
 | **RF04** Otimização da agenda | Agenda sem conflito de local, árbitro ou time, um jogo por time por dia, fases em dias seguidos; reagendamento manual com checagem de conflitos |
@@ -46,6 +46,8 @@ cd frontend
 npm install
 npm run dev:api
 ```
+
+A documentação da API (Swagger) fica em http://127.0.0.1:3333/docs.
 
 Abra http://localhost:5173 e entre com `organizador@playoff.dev` ou `visitante@playoff.dev`, senha `playoff123`, ou crie uma conta. Os dados ficam na API em memória e voltam ao início quando ela reinicia; para guardar de verdade, use o Oracle ([backend/db](backend/db/README.md)).
 
@@ -85,7 +87,8 @@ npm run e2e       # (só frontend) ponta a ponta: navegador + API reais
 - **API** (`backend/src/test`): requisições HTTP de verdade contra a API em memória, incluindo um campeonato completo, a recusa de cada rota de gestão para quem não é o dono, e a conversão para as tabelas Oracle conferida contra o próprio DDL.
 - **Modo API** (`frontend/src/test/api-mode.test.tsx`): as telas contra o **backend real** rodando dentro do teste (sem imitação), incluindo login, sessão expirada, código de torneio privado conferido no servidor e regras recusadas pela API aparecendo na tela.
 - **Ponta a ponta** (`frontend/e2e`, Playwright): navegador de verdade, API e frontend compilado rodando como servidores. No Windows usa o Edge já instalado; no CI, o Chromium.
-- **CI:** o GitHub Actions roda lint, tipos, testes e build do frontend e do backend, e depois os testes de ponta a ponta, em todo push na `main` e no `devops` e em todo pull request.
+- **Oracle** (`npm run test:oracle` no backend): os mesmos testes da API gravando num Oracle de verdade. O teste de contrato do repositório confere que memória e Oracle se comportam igual.
+- **CI:** o GitHub Actions roda lint, tipos, testes e build do frontend e do backend. Depois roda os testes contra um Oracle 23ai Free, que sobe só para isso, e os de ponta a ponta. Vale para todo push na `main` e no `devops` e para todo pull request.
 
 ## Estrutura
 

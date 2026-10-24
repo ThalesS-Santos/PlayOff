@@ -396,7 +396,7 @@ function ModalitiesStep({ mods, setMods }: { mods: DraftMod[]; setMods: (m: Draf
                   Turno e returno (cada dupla de times se enfrenta duas vezes)
                 </label>
               )}
-              {m.format === 'dupla_eliminacao' && <p className="mt-3 text-xs text-faint">Dupla eliminação exige 4, 8, 16 ou 32 equipes.</p>}
+              {m.format === 'dupla_eliminacao' && <p className="mt-3 text-xs text-faint">Dupla eliminação aceita de 3 a 32 equipes; faltando equipes para completar a chave, os cabeças de chave folgam na 1ª rodada.</p>}
             </motion.li>
           ))}
         </AnimatePresence>

@@ -1,6 +1,6 @@
 # Banco de dados Oracle
 
-> **Estado:** os scripts e o repositório Oracle (`src/repo/oracle-repo.ts`) foram escritos, mas **ainda não rodaram num Oracle real**. A conversão entre o domínio e as linhas está testada (`src/test/oracle-mapper.test.ts`), inclusive contra as colunas deste DDL. Ao instalar o banco, siga os passos abaixo e rode `npm run db:seed` para validar.
+> **Estado:** testado num **Oracle 23ai Free de verdade** a cada push, no CI (job "Oracle"). Lá o `npm run db:schema` cria as tabelas, o `npm run test:oracle` roda todos os testes da API gravando e lendo do banco (inclusive a transação que volta atrás quando uma gravação falha) e o `npm run db:seed` carrega a demonstração. No seu computador, siga os passos abaixo.
 
 ## Arquivos
 
@@ -34,6 +34,14 @@ Nova conexão:
 
 Abra `001_schema.sql` e execute como script (F5).
 
+Ou, sem o SQL Developer, pelo terminal (com o `.env` do passo 3 já preenchido):
+
+```bash
+npm run db:schema
+```
+
+Ele roda o `000_drop.sql` e o `001_schema.sql` (apaga as tabelas que já existirem).
+
 ## 3. Apontar a API para o Oracle
 
 Em `backend/.env` (copie de `.env.example`):
@@ -54,6 +62,12 @@ npm run db:seed
 
 ```bash
 npm run dev
+```
+
+Para conferir tudo contra o seu banco (atenção: os testes **apagam os dados** das tabelas):
+
+```bash
+npm run test:oracle
 ```
 
 ## Modelo

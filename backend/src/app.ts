@@ -1,10 +1,13 @@
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
+import swagger from '@fastify/swagger'
+import swaggerUi from '@fastify/swagger-ui'
 import Fastify from 'fastify'
 import { ZodError } from 'zod'
 import { verifyToken } from './auth/token'
 import { HttpError } from './http'
+import { openApiDocument } from './openapi'
 import { DuplicateError, type Repo } from './repo/types'
 import { authRoutes } from './routes/auth'
 import { manageRoutes } from './routes/manage'
@@ -60,10 +63,21 @@ export function buildApp({ repo, jwtSecret, corsOrigin = 'http://localhost:5173'
     return reply.status(500).send({ code: 'erro_interno', message: 'Erro interno. Tente novamente.' })
   })
 
-  app.get('/api/v1/saude', async () => {
-    await repo.ping()
-    return { ok: true }
+  // documentação: /docs (Swagger UI) e /docs/json (OpenAPI)
+  app.register(swagger, { mode: 'static', specification: { document: openApiDocument() as never } })
+  app.register(swaggerUi, {
+    routePrefix: '/docs',
+    staticCSP: true,
+    // o Swagger UI aplica estilos inline; scripts continuam só do próprio servidor
+    transformStaticCSP: (csp) => csp.replace("style-src 'self' https:", "style-src 'self' https: 'unsafe-inline'"),
   })
+
+  app.register(async (api) => {
+    api.get('/saude', async () => {
+      await repo.ping()
+      return { ok: true }
+    })
+  }, { prefix: '/api/v1' })
   app.register(authRoutes, { prefix: '/api/v1', repo, jwtSecret, authLimit: { max: limits.authMax, timeWindow: limits.windowMs } })
   app.register(tournamentRoutes, { prefix: '/api/v1', repo })
   app.register(manageRoutes, { prefix: '/api/v1', repo })
