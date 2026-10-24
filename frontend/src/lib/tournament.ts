@@ -1,5 +1,7 @@
-import { applySumula, formatErrors, generateMatches, scheduleTournament, sumulaErrors } from './engine'
-import type { Sumula, Tournament, TournamentStatus } from './types'
+import { applySumula, formatErrors, generateMatches, scheduleTournament, sumulaErrors, uid } from './engine'
+import { isOrganizer } from './permissions'
+import { TEAM_COLORS, validatePrize } from './registry'
+import type { Format, Modality, Prize, Sumula, SumulaKind, Team, Tournament, TournamentStatus, User } from './types'
 
 /* Ciclo de vida do torneio (diagrama de estados, RN11) e ações que dependem dele. */
 
@@ -139,10 +141,126 @@ export function editDetails(t: Tournament, d: TournamentDetails, others: Tournam
     visibility: d.visibility,
     accessCode: d.visibility === 'privado' ? d.accessCode!.trim().toUpperCase() : undefined,
     // espaços removidos deixam de valer para as modalidades
-    modalities: t.modalities.map((m) => (m.venues ? { ...m, venues: m.venues.filter((v) => d.venues.includes(v)) } : m)),
+    // (sem nenhum espaço próprio restante, a modalidade volta a usar todos os do torneio)
+    modalities: t.modalities.map((m) => {
+      if (!m.venues) return m
+      const kept = m.venues.filter((v) => d.venues.includes(v))
+      return { ...m, venues: kept.length ? kept : undefined }
+    }),
   }
   const reschedule = t.startDate !== d.startDate || t.endDate !== d.endDate || t.venues.join() !== d.venues.join()
   return reschedule && !isClosed(t) && t.modalities.some((m) => m.matches.length) ? scheduleTournament(next) : next
+}
+
+/* ───────────── Criação (assistente no frontend, POST /torneios no servidor) ───────────── */
+
+export interface DraftModality {
+  id?: string
+  sport: string
+  kind: SumulaKind
+  category: 'M' | 'F' | 'Misto'
+  sub?: string
+  format: Format
+  returno?: boolean
+  /** nomes das equipes inscritas */
+  teams: string[]
+  /** nomes das cabeças de chave, na ordem */
+  seeds: string[]
+}
+
+export interface TournamentDraft extends TournamentDetails {
+  referees: string[]
+  cover: [string, string]
+  modalities: DraftModality[]
+  prizes: Omit<Prize, 'id'>[]
+  /** sortear e agendar já na criação */
+  generateNow: boolean
+}
+
+const sameName = (a: string, b: string) => a.trim().toLocaleLowerCase('pt-BR') === b.trim().toLocaleLowerCase('pt-BR')
+
+/** Erros de cada passo do assistente: 0 dados, 1 modalidades, 2 equipes, 3 prêmios, 4 revisão. */
+export function draftStepErrors(step: number, d: TournamentDraft, others: Tournament[], organizerId: string): string[] {
+  const e: string[] = []
+  if (step === 0) {
+    e.push(...validateDetails(d, others, organizerId))
+    if (!d.referees.length) e.push('Informe ao menos um árbitro.')
+  }
+  if (step === 1) {
+    if (!d.modalities.length) e.push('Adicione pelo menos uma modalidade.')
+    for (const m of d.modalities)
+      if ((m.kind === 'colocacao') !== (m.format === 'prova')) e.push(`${m.sport}: súmula de colocação combina só com o formato prova.`)
+  }
+  if (step === 2)
+    for (const m of d.modalities) {
+      if (m.teams.length < 2) e.push(`${m.sport}: inscreva ao menos 2 equipes.`)
+      if (m.teams.some((x, i) => !x.trim() || m.teams.findIndex((y) => sameName(x, y)) !== i)) e.push(`${m.sport}: nomes de equipe vazios ou repetidos.`)
+      if (m.seeds.some((s) => !m.teams.includes(s))) e.push(`${m.sport}: cabeça de chave fora da lista de equipes.`)
+    }
+  if (step === 3) d.prizes.forEach((p, i) => validatePrize({ ...p, id: String(i) }).forEach((msg) => e.push(`Prêmio ${i + 1}: ${msg}`)))
+  // sortear na criação exige a quantidade certa de times para o formato (ex.: dupla eliminação)
+  if (step === 4 && d.generateNow) d.modalities.forEach((m) => formatErrors(m.format, m.teams.length).forEach((msg) => e.push(`${m.sport}: ${msg}.`)))
+  return e
+}
+
+/** Monta o torneio a partir do rascunho (RF01); recusa rascunho inválido. */
+export function createTournament(d: TournamentDraft, organizer: User, others: Tournament[], now = Date.now()): Tournament {
+  if (!isOrganizer(organizer)) throw new Error('Só organizadores criam torneios.')
+  const errors = [0, 1, 2, 3, 4].flatMap((s) => draftStepErrors(s, d, others, organizer.id))
+  if (errors.length) throw new Error(errors[0])
+  const teams: Team[] = []
+  const modalities: Modality[] = d.modalities.map((m) => {
+    const ids = m.teams.map((name) => {
+      const id = uid('tm')
+      teams.push({
+        id,
+        name: name.trim(),
+        short: name.trim().slice(0, 3).toUpperCase(),
+        color: TEAM_COLORS[teams.length % TEAM_COLORS.length],
+        coach: 'A definir',
+        players: Array.from({ length: 5 }, (_, j) => ({ id: `${id}p${j}`, name: `Atleta ${j + 1}`, number: j + 1 })),
+      })
+      return { id, name }
+    })
+    return {
+      id: m.id ?? uid('md'),
+      sport: m.sport.trim(),
+      kind: m.kind,
+      category: m.category,
+      sub: m.sub?.trim() || undefined,
+      format: m.format,
+      teamIds: ids.map((x) => x.id),
+      seeds: m.seeds.map((s) => ids.find((x) => x.name === s)!.id),
+      groups: [],
+      matches: [],
+      advancePerGroup: 2,
+      returno: m.format === 'pontos_corridos' ? !!m.returno : undefined,
+    }
+  })
+  const t: Tournament = {
+    id: uid('t'),
+    name: d.name.trim(),
+    description: d.description.trim() || 'Torneio criado no PlayOff.',
+    orgId: organizer.orgId ?? 'o1',
+    organizerId: organizer.id,
+    visibility: d.visibility,
+    accessCode: d.visibility === 'privado' ? d.accessCode!.trim().toUpperCase() : undefined,
+    status: 'publicado',
+    startDate: d.startDate,
+    endDate: d.endDate,
+    city: d.city.trim(),
+    venueName: d.venueName.trim(),
+    venues: d.venues,
+    referees: d.referees,
+    cover: d.cover,
+    teams,
+    modalities,
+    // prêmio de modalidade inexistente passa a ser "Geral"
+    prizes: d.prizes.map((p) => ({ ...p, name: p.name.trim(), modalityId: modalities.some((m) => m.id === p.modalityId) ? p.modalityId : undefined, id: uid('pz') })),
+    favoritedBy: [],
+    createdAt: now,
+  }
+  return d.generateNow ? scheduleTournament({ ...t, status: 'chaveamento', modalities: t.modalities.map((m) => generateMatches(m)) }) : t
 }
 
 /** "Quadra 1, Quadra 2 ,, " → ["Quadra 1", "Quadra 2"] sem repetições. */

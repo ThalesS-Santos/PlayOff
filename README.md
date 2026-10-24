@@ -4,7 +4,11 @@ Plataforma web para **criar, administrar e acompanhar campeonatos esportivos**: 
 
 Projeto acadêmico. **Equipe:** Amanda Lordello, Davi Braz, Saulo Sousa, Thales Sena e Victor Lopes · **Docente:** Claudia Simões.
 
-> **Estado atual:** protótipo funcional do frontend. Os dados ficam no navegador (`localStorage`) e o login é simulado. O backend com banco de dados é a próxima etapa.
+> **Estado atual:**
+> - **Frontend:** protótipo completo. Ainda usa os dados do navegador (`localStorage`) e o login simulado.
+> - **Backend (API):** pronto e testado com dados em memória, com login real, permissões no servidor e as mesmas regras do frontend.
+> - **Oracle:** esquema e repositório escritos, mas ainda não executados num banco real ([backend/db](backend/db/README.md)).
+> - **Próximo passo:** ligar o frontend à API.
 
 ## Funcionalidades
 
@@ -40,7 +44,19 @@ Dados de demonstração:
 
 O menu do usuário tem **Restaurar demonstração** para voltar aos dados iniciais.
 
+### API (backend)
+
+```bash
+cd backend
+npm install
+npm run dev
+```
+
+Sobe em http://127.0.0.1:3333 com os mesmos dados de demonstração em memória. Usuários, rotas e configuração do Oracle estão no [README do backend](backend/README.md).
+
 ## Testes e qualidade
+
+Os mesmos comandos valem em `frontend/` e em `backend/`:
 
 ```bash
 cd frontend
@@ -53,7 +69,8 @@ npm run build     # build de produção
 - **Motor** (`src/lib`): chaveamentos, classificação e desempate, agenda, regras de negócio e permissões, testados com funções puras.
 - **Telas** (`src/test`): fluxos completos com Testing Library, simulando organizador e espectador.
 - **Contra falso positivo:** qualquer `console.error`/`console.warn` durante um teste faz o teste falhar.
-- **CI:** o GitHub Actions roda lint, tipos, testes e build em todo push e pull request para a `main`.
+- **API** (`backend/src/test`): requisições HTTP de verdade contra a API em memória, incluindo um campeonato completo, a recusa de cada rota de gestão para quem não é o dono, e a conversão para as tabelas Oracle conferida contra o próprio DDL.
+- **CI:** o GitHub Actions roda lint, tipos, testes e build do frontend e do backend em todo push e pull request para a `main`.
 
 ## Estrutura
 
@@ -65,6 +82,9 @@ frontend/
   src/components/         componentes de interface
   src/pages/              telas
   src/test/               testes de interface
+backend/
+  src/                    API (Fastify): rotas, autenticação, repositórios (memória e Oracle)
+  db/                     scripts SQL do Oracle
 .github/workflows/ci.yml  integração contínua
 ```
 

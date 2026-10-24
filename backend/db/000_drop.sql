@@ -1,0 +1,13 @@
+-- Apaga todas as tabelas do PlayOff (dados incluídos). Use só em desenvolvimento.
+BEGIN
+  FOR t IN (
+    SELECT table_name FROM user_tables WHERE table_name IN (
+      'ACESSO_TORNEIO', 'FAVORITO', 'PREMIO', 'CARTAO', 'SUMULA_COLOCACAO', 'SUMULA_SET', 'SUMULA_PONTOS', 'SUMULA',
+      'PARTIDA_PARTICIPANTE', 'PARTIDA', 'GRUPO_TIME', 'GRUPO', 'PARTICIPACAO', 'MODALIDADE_LOCAL', 'MODALIDADE',
+      'JOGADORES', 'TIMES', 'TORNEIO_ARBITRO', 'TORNEIO_LOCAL', 'TORNEIO', 'USUARIO', 'ORGANIZACAO'
+    )
+  ) LOOP
+    EXECUTE IMMEDIATE 'DROP TABLE ' || t.table_name || ' CASCADE CONSTRAINTS PURGE';
+  END LOOP;
+END;
+/

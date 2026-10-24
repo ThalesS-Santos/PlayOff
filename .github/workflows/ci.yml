@@ -18,9 +18,9 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -45,6 +45,45 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cobertura
+          name: cobertura-frontend
           path: frontend/coverage
+          if-no-files-found: ignore
+
+  backend:
+    name: Backend (lint, tipos, testes, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      # o checkout inteiro: o backend usa as regras de negócio de frontend/src/lib
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Lint (qualquer aviso reprova)
+        run: npm run lint
+
+      - name: Checagem de tipos
+        run: npm run typecheck
+
+      - name: Testes com cobertura mínima de 95%
+        run: npm test
+
+      - name: Build de produção
+        run: npm run build
+
+      - name: Relatório de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura-backend
+          path: backend/coverage
           if-no-files-found: ignore

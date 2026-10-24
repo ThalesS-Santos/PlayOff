@@ -3,6 +3,7 @@ import { detectConflicts, generateMatches } from './engine'
 import { freshState } from './state'
 import {
   canRecord,
+  createTournament,
   draw,
   editDetails,
   isClosed,
@@ -14,6 +15,7 @@ import {
   transitionErrors,
   validateDetails,
   type TournamentDetails,
+  type TournamentDraft,
 } from './tournament'
 import type { Modality, Sumula, Tournament } from './types'
 
@@ -188,6 +190,55 @@ describe('dados do torneio (criar/editar)', () => {
 
   it('splitList limpa espaços, vazios e repetidos', () => {
     expect(splitList(' Quadra 1, Quadra 2 ,, Quadra 1 ')).toEqual(['Quadra 1', 'Quadra 2'])
+  })
+})
+
+describe('criação de torneio (compartilhada com o servidor)', () => {
+  const org = { id: 'u1', name: 'Org', role: 'organizador' as const, orgId: 'o1' }
+  const draft = (p: Partial<TournamentDraft> = {}): TournamentDraft => ({
+    name: 'Copa', description: '', startDate: '2026-11-10', endDate: '2026-11-20', city: 'X', venueName: 'Y', venues: ['Q1'], visibility: 'publico',
+    referees: ['R'], cover: ['#000000', '#ffffff'], prizes: [{ name: 'T', kind: 'coletivo', place: 1, modalityId: 'm' }], generateNow: false,
+    modalities: [{ id: 'm', sport: 'Futsal', kind: 'pontos', category: 'M', format: 'eliminacao', teams: ['A', 'B'], seeds: ['B'] }],
+    ...p,
+  })
+
+  it('monta times, modalidades, cabeças de chave e prêmios; sem sortear fica publicado', () => {
+    const t = createTournament(draft({ description: '  ' }), org, [], 123)
+    expect(t).toMatchObject({ status: 'publicado', organizerId: 'u1', orgId: 'o1', createdAt: 123, description: 'Torneio criado no PlayOff.' })
+    expect(t.teams.map((x) => x.name)).toEqual(['A', 'B'])
+    expect(t.modalities[0].seeds).toEqual([t.teams[1].id])
+    expect(t.prizes[0].modalityId).toBe('m')
+  })
+
+  it('sorteando na criação: chaveamento definido; prêmio de modalidade inexistente vira Geral', () => {
+    const t = createTournament(draft({ generateNow: true, visibility: 'privado', accessCode: 'abcd', prizes: [{ name: 'T', kind: 'coletivo', place: 1, modalityId: 'outra' }] }), { ...org, orgId: undefined }, [])
+    expect(t).toMatchObject({ status: 'chaveamento', accessCode: 'ABCD', orgId: 'o1' })
+    expect(t.modalities[0].matches.length).toBe(1)
+    expect(t.prizes[0].modalityId).toBeUndefined()
+  })
+
+  it('recusa espectador e cada tipo de erro do rascunho', () => {
+    expect(() => createTournament(draft(), { id: 'u2', name: 'F', role: 'espectador' }, [])).toThrow(/Só organizadores/)
+    const err = (p: Partial<TournamentDraft>) => () => createTournament(draft(p), org, [])
+    expect(err({ referees: [] })).toThrow('Informe ao menos um árbitro.')
+    expect(err({ modalities: [] })).toThrow('Adicione pelo menos uma modalidade.')
+    expect(err({ modalities: [{ sport: 'Nado', kind: 'colocacao', category: 'M', format: 'eliminacao', teams: ['A', 'B'], seeds: [] }] })).toThrow(/combina só com o formato prova/)
+    expect(err({ modalities: [{ sport: 'F', kind: 'pontos', category: 'M', format: 'eliminacao', teams: ['A', ' a '], seeds: [] }] })).toThrow(/vazios ou repetidos/)
+    expect(err({ modalities: [{ sport: 'F', kind: 'pontos', category: 'M', format: 'eliminacao', teams: ['A', 'B'], seeds: ['Z'] }] })).toThrow(/fora da lista/)
+    expect(err({ prizes: [{ name: '', kind: 'coletivo', place: 1 }] })).toThrow(/Prêmio 1/)
+    expect(err({ generateNow: true, modalities: [{ sport: 'V', kind: 'set', category: 'F', format: 'dupla_eliminacao', teams: ['A', 'B', 'C'], seeds: [] }] })).toThrow(/dupla eliminação/)
+  })
+
+  it('pontos corridos guarda turno/returno; id e submodalidade opcionais', () => {
+    const t = createTournament(draft({ modalities: [{ sport: 'Liga', kind: 'pontos', category: 'Misto', sub: ' Dupla ', format: 'pontos_corridos', returno: true, teams: ['A', 'B', 'C'], seeds: [] }] }), org, [])
+    expect(t.modalities[0]).toMatchObject({ returno: true, sub: 'Dupla' })
+    expect(t.modalities[0].id).toMatch(/^md_/)
+  })
+
+  it('editar removendo todos os espaços próprios da modalidade volta a usar os do torneio', () => {
+    const t = base({ modalities: [mod('m', ids(2), { venues: ['Q1'] })] })
+    const e = editDetails(t, { name: 'Copa', description: '', startDate: t.startDate, endDate: t.endDate, city: 'X', venueName: 'Y', venues: ['Q2'], visibility: 'publico' }, [])
+    expect(e.modalities[0].venues).toBeUndefined()
   })
 })
 

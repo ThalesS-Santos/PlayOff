@@ -5,12 +5,12 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { spring } from '../components/motion'
 import { Button, Crest, Field, inputCls, Page } from '../components/ui'
-import { formatErrors, generateMatches, scheduleTournament, uid } from '../lib/engine'
+import { uid } from '../lib/engine'
 import { FORMAT_LABEL } from '../lib/format'
-import { TEAM_COLORS, validatePrize } from '../lib/registry'
-import { splitList, validateDetails } from '../lib/tournament'
+import { TEAM_COLORS } from '../lib/registry'
 import { useStore } from '../lib/store'
-import type { Format, Modality, Prize, SumulaKind, Team, Tournament } from '../lib/types'
+import { createTournament, draftStepErrors, splitList, type TournamentDraft } from '../lib/tournament'
+import type { Format, Prize, SumulaKind } from '../lib/types'
 
 const SPORTS: { name: string; kind: SumulaKind }[] = [
   { name: 'Futsal', kind: 'pontos' },
@@ -72,17 +72,26 @@ export default function CreateTournament() {
   const [prizes, setPrizes] = useState<Omit<Prize, 'id'>[]>([{ name: 'Troféu de Campeão', kind: 'coletivo', place: 1, value: 500 }])
   const [generateNow, setGenerateNow] = useState(true)
 
+  const draft = (): TournamentDraft => ({
+    name,
+    description,
+    startDate,
+    endDate,
+    city,
+    venueName,
+    venues: splitList(venues),
+    referees: splitList(referees),
+    visibility,
+    accessCode: code,
+    cover,
+    modalities: mods,
+    prizes,
+    generateNow,
+  })
+
+  // as mesmas regras que o servidor aplica ao receber o torneio
   const validate = (s: number) => {
-    const e: string[] = []
-    if (s === 0) {
-      e.push(...validateDetails({ name, description, startDate, endDate, city, venueName, venues: splitList(venues), visibility, accessCode: code }, tournaments, user!.id))
-      if (!splitList(referees).length) e.push('Informe ao menos um árbitro.')
-    }
-    if (s === 1 && !mods.length) e.push('Adicione pelo menos uma modalidade.')
-    if (s === 2) mods.forEach((m) => m.teams.length < 2 && e.push(`${m.sport}: inscreva ao menos 2 equipes.`))
-    if (s === 3) prizes.forEach((p, i) => validatePrize({ ...p, id: String(i) }).forEach((msg) => e.push(`Prêmio ${i + 1}: ${msg}`)))
-    // sortear na criação exige a quantidade certa de times para o formato (ex.: dupla eliminação)
-    if (s === 4 && generateNow) mods.forEach((m) => formatErrors(m.format, m.teams.length).forEach((msg) => e.push(`${m.sport}: ${msg}.`)))
+    const e = draftStepErrors(s, draft(), tournaments, user!.id)
     setErrors(e)
     return !e.length
   }
@@ -96,65 +105,7 @@ export default function CreateTournament() {
 
   const create = () => {
     if (!validate(4)) return
-    const teams: Team[] = []
-    const modalities: Modality[] = mods.map((m) => {
-      const ids = m.teams.map((tn, i) => {
-        const id = uid('tm')
-        teams.push({
-          id,
-          name: tn,
-          short: tn.slice(0, 3).toUpperCase(),
-          color: TEAM_COLORS[(teams.length + i) % TEAM_COLORS.length],
-          coach: 'A definir',
-          players: Array.from({ length: 5 }, (_, j) => ({ id: `${id}p${j}`, name: `Atleta ${j + 1}`, number: j + 1 })),
-        })
-        return { id, tn }
-      })
-      return {
-        id: m.id,
-        sport: m.sport,
-        kind: m.kind,
-        category: m.category,
-        sub: m.sub || undefined,
-        format: m.format,
-        teamIds: ids.map((x) => x.id),
-        seeds: m.seeds.map((s) => ids.find((x) => x.tn === s)!.id),
-        groups: [],
-        matches: [],
-        advancePerGroup: 2,
-        returno: m.format === 'pontos_corridos' ? m.returno : undefined,
-      }
-    })
-    let t: Tournament = {
-      id: uid('t'),
-      name: name.trim(),
-      description: description.trim() || 'Torneio criado no PlayOff.',
-      orgId: user?.orgId ?? 'o1',
-      organizerId: user!.id,
-      visibility,
-      accessCode: visibility === 'privado' ? code.trim().toUpperCase() : undefined,
-      status: 'publicado',
-      startDate,
-      endDate,
-      city,
-      venueName,
-      venues: splitList(venues),
-      referees: splitList(referees),
-      cover,
-      teams,
-      modalities,
-      // modalidade removida no assistente: o prêmio passa a ser "Geral"
-      prizes: prizes.map((p) => ({ ...p, name: p.name.trim(), modalityId: mods.some((m) => m.id === p.modalityId) ? p.modalityId : undefined, id: uid('pz') })),
-      favoritedBy: [],
-      createdAt: Date.now(),
-    }
-    if (generateNow) {
-      t = scheduleTournament({
-        ...t,
-        status: 'chaveamento',
-        modalities: t.modalities.map((m) => generateMatches(m)),
-      })
-    }
+    const t = createTournament(draft(), user!, tournaments)
     dispatch({ type: 'upsert', t })
     setDone(true)
     setTimeout(() => {

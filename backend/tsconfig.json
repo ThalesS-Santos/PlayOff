@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  /* as regras de negócio são as mesmas do frontend: importadas de lá, não copiadas */
+  "include": [
+    "src",
+    "../frontend/src/lib/engine.ts",
+    "../frontend/src/lib/permissions.ts",
+    "../frontend/src/lib/registry.ts",
+    "../frontend/src/lib/seed.ts",
+    "../frontend/src/lib/tournament.ts",
+    "../frontend/src/lib/types.ts"
+  ]
+}
