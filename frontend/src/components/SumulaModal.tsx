@@ -134,23 +134,23 @@ export function SumulaModal({ t, mod, match, onClose }: { t: Tournament; mod?: M
     return { kind: 'colocacao', entries }
   }
 
-  const finish = () => {
+  const finish = async () => {
     if (!match) return
     const s = build()
     if (!s) return toast({ title: 'Preencha todos os tempos', body: 'Formato: 28.43 ou 1:02.10', tone: 'warn' })
     const preview = { ...match, sumula: s }
     if (knockout && mod.kind !== 'colocacao' && !winnerOf(preview)) return toast({ title: 'Mata-mata precisa de vencedor', body: mod.kind === 'pontos' ? 'Informe os pênaltis.' : 'Adicione o set decisivo.', tone: 'warn' })
-    if (!registerSumula(t.id, mod.id, match.id, s)) return
+    if (!(await registerSumula(t.id, mod.id, match.id, s))) return
     const w = mod.kind === 'colocacao' ? ranking(preview)[0]?.teamId : winnerOf(preview)
     toast({ title: 'Súmula registrada', body: w ? `${team(w)?.name} vence${match.nextMatchId ? ' e avança na chave' : ''}!` : 'Resultado salvo.' })
     onClose()
   }
 
-  const live = () => {
+  const live = async () => {
     if (!match) return
     const s = build()
     if (!s) return toast({ title: 'Preencha todos os tempos', body: 'Formato: 28.43 ou 1:02.10', tone: 'warn' })
-    if (!saveLive(t.id, mod.id, match.id, s)) return
+    if (!(await saveLive(t.id, mod.id, match.id, s))) return
     toast({ title: 'Placar ao vivo atualizado', tone: 'info' })
     onClose()
   }

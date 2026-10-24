@@ -4,7 +4,7 @@ import { Navbar } from './components/Layout'
 import { useBrandHue } from './components/useBrandHue'
 import { Toaster } from './components/ui'
 import { useStore } from './lib/store'
-import { StoreProvider } from './lib/StoreProvider'
+import { StoreProvider, type StoreProviderProps } from './lib/StoreProvider'
 import Catalog from './pages/Catalog'
 import CreateTournament from './pages/CreateTournament'
 import Dashboard from './pages/Dashboard'
@@ -14,14 +14,20 @@ import TournamentPage from './pages/TournamentPage'
 
 export function Shell() {
   const location = useLocation()
-  const { user, orgs, get, orgOf } = useStore()
+  const { user, orgs, get, orgOf, booting } = useStore()
 
   // Cada torneio exibe a identidade visual da sua organização (RF06)
   const tMatch = matchPath('/torneios/:id', location.pathname)
   const t = tMatch ? get(tMatch.params.id ?? '') : undefined
-  const hue = t ? orgOf(t).hue : (orgs.find((o) => o.id === user?.orgId) ?? orgs[0]).hue
+  const hue = t ? orgOf(t).hue : (orgs.find((o) => o.id === user?.orgId) ?? orgs[0])?.hue
   useBrandHue(hue)
 
+  if (booting)
+    return (
+      <div className="grid min-h-screen place-items-center text-sm text-muted" role="status">
+        Carregando…
+      </div>
+    )
   if (!user) return location.pathname === '/' ? <Login /> : <Navigate to="/" replace />
 
   const isOrg = user.role === 'organizador'
@@ -44,10 +50,11 @@ export function Shell() {
   )
 }
 
-export default function App() {
+/** Com VITE_API_URL o app usa a API (login real); sem ela, roda no modo demonstração. */
+export default function App({ apiUrl = import.meta.env.VITE_API_URL, fetchImpl }: Omit<StoreProviderProps, 'children'>) {
   return (
     <MotionConfig reducedMotion="user">
-      <StoreProvider>
+      <StoreProvider apiUrl={apiUrl} fetchImpl={fetchImpl}>
         <BrowserRouter>
           <Shell />
           <Toaster />

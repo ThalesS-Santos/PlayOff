@@ -26,7 +26,7 @@ import {
   Users,
   Wand2,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AccessModal } from '../components/AccessModal'
 import { Bracket, BracketColumns } from '../components/Bracket'
@@ -58,9 +58,31 @@ const NEXT: Partial<Record<TournamentStatus, { to: TournamentStatus; label: stri
 
 export default function TournamentPage() {
   const { id } = useParams()
-  const { get } = useStore()
+  const { get, mode, loadTournament } = useStore()
   const nav = useNavigate()
+  const [loading, setLoading] = useState(mode === 'api')
+  // modo API: o catálogo traz só o resumo; o torneio completo vem ao abrir a página
+  const load = useRef(loadTournament)
+  useEffect(() => {
+    load.current = loadTournament
+  })
+  useEffect(() => {
+    if (mode !== 'api') return
+    let alive = true
+    void load.current(id ?? '').then(() => alive && setLoading(false))
+    return () => {
+      alive = false
+    }
+  }, [id, mode])
   const t = get(id ?? '')
+  if (!t && loading)
+    return (
+      <Page className="pt-12">
+        <p className="text-center text-sm text-muted" role="status">
+          Carregando torneio…
+        </p>
+      </Page>
+    )
   if (!t)
     return (
       <Page className="pt-12">
@@ -466,7 +488,7 @@ function PrizesTab({ t }: { t: Tournament }) {
 /* ───────────── Gestão (organizador) ───────────── */
 
 function ManageTab({ t }: { t: Tournament }) {
-  const { optimize, toast, transition, dispatch } = useStore()
+  const { optimize, toast, transition, removeTournament } = useStore()
   const [drawMod, setDrawMod] = useState<Modality | null>(null)
   const [editing, setEditing] = useState(false)
   const nav = useNavigate()
@@ -476,8 +498,8 @@ function ManageTab({ t }: { t: Tournament }) {
   const blocked = next ? transitionErrors(t, next.to) : []
   const closed = isClosed(t)
 
-  const runOptimize = () => {
-    if (!optimize(t.id)) return
+  const runOptimize = async () => {
+    if (!(await optimize(t.id))) return
     toast({ title: 'Agenda otimizada', body: conflicts.length ? `${conflicts.length} conflito(s) antes da otimização.` : 'Calendário já estava balanceado.' })
   }
 
@@ -501,8 +523,8 @@ function ManageTab({ t }: { t: Tournament }) {
           {next && (
             <Button
               disabled={blocked.length > 0}
-              onClick={() => {
-                if (transition(t.id, next.to)) toast({ title: STATUS_LABEL[next.to], body: t.name })
+              onClick={async () => {
+                if (await transition(t.id, next.to)) toast({ title: STATUS_LABEL[next.to], body: t.name })
               }}
             >
               {next.label}
@@ -579,15 +601,16 @@ function ManageTab({ t }: { t: Tournament }) {
           </Button>
           <Button
             variant="danger"
-            onClick={() => {
-              if (confirm === 'delete') {
-                dispatch({ type: 'remove', id: t.id })
+            onClick={async () => {
+              const what = confirm
+              setConfirm(null)
+              if (what === 'delete') {
+                if (!(await removeTournament(t.id))) return
                 nav('/painel')
                 toast({ title: 'Torneio excluído', tone: 'info' })
-              } else if (transition(t.id, 'cancelado')) {
+              } else if (await transition(t.id, 'cancelado')) {
                 toast({ title: 'Torneio cancelado', tone: 'warn' })
               }
-              setConfirm(null)
             }}
           >
             Confirmar

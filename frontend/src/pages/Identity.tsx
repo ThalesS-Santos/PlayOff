@@ -20,7 +20,7 @@ const PRESETS = [
 
 /** RF06 — personalização da identidade visual por organização. */
 export default function Identity() {
-  const { orgs, user, dispatch, toast } = useStore()
+  const { orgs, user, saveOrg, toast } = useStore()
   const org = orgs.find((o) => o.id === user?.orgId) ?? orgs[0]
   const [hue, setHue] = useState(org.hue)
   const [name, setName] = useState(org.name)
@@ -71,8 +71,8 @@ export default function Identity() {
           <Button
             className="w-full"
             icon={<Palette size={16} />}
-            onClick={() => {
-              dispatch({ type: 'org', org: { ...org, name: name.trim() || org.name, short: short || org.short, hue } })
+            onClick={async () => {
+              if (!(await saveOrg({ ...org, name: name.trim() || org.name, short: short || org.short, hue }))) return
               toast({ title: 'Identidade salva', body: 'Aplicada a todos os torneios da organização.' })
             }}
           >

@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import { motion } from 'motion/react'
 import { CalendarClock, Pin, PinOff } from 'lucide-react'
 import { useState } from 'react'
-import { reschedule, SLOTS, slotConflicts, tournamentDays, unpin, type Slot } from '../lib/engine'
+import { SLOTS, slotConflicts, tournamentDays, type Slot } from '../lib/engine'
 import { useStore } from '../lib/store'
 import type { Match, Modality, Tournament } from '../lib/types'
 import { fmtDate } from '../lib/format'
@@ -10,7 +10,7 @@ import { Button, inputCls } from './ui'
 
 /** Reagendamento manual de uma partida, com checagem de conflitos (RF04). */
 export function Reschedule({ t, mod, match }: { t: Tournament; mod: Modality; match: Match }) {
-  const { edit, toast } = useStore()
+  const { reschedule, unpin, toast } = useStore()
   const days = tournamentDays(t)
   const venues = mod.venues?.length ? mod.venues : t.venues
   const [open, setOpen] = useState(false)
@@ -38,8 +38,8 @@ export function Reschedule({ t, mod, match }: { t: Tournament; mod: Modality; ma
               size="sm"
               variant="ghost"
               icon={<PinOff size={14} />}
-              onClick={() => {
-                if (edit(t.id, (x) => unpin(x, match.id)))
+              onClick={async () => {
+                if (await unpin(t.id, match.id))
                   toast({ title: 'Horário liberado', body: 'A otimização da agenda pode mover esta partida.', tone: 'info' })
               }}
             >
@@ -98,8 +98,8 @@ export function Reschedule({ t, mod, match }: { t: Tournament; mod: Modality; ma
           size="sm"
           disabled={unchanged || reasons.length > 0}
           icon={<Pin size={14} />}
-          onClick={() => {
-            if (!edit(t.id, (x) => reschedule(x, match.id, slot))) return
+          onClick={async () => {
+            if (!(await reschedule(t.id, match.id, slot))) return
             toast({ title: 'Partida reagendada', body: `${fmtDate(slot.date)} às ${slot.time} · ${slot.venue}` })
             setOpen(false)
           }}

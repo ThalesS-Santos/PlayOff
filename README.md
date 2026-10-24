@@ -5,10 +5,11 @@ Plataforma web para **criar, administrar e acompanhar campeonatos esportivos**: 
 Projeto acadêmico. **Equipe:** Amanda Lordello, Davi Braz, Saulo Sousa, Thales Sena e Victor Lopes · **Docente:** Claudia Simões.
 
 > **Estado atual:**
-> - **Frontend:** protótipo completo. Ainda usa os dados do navegador (`localStorage`) e o login simulado.
-> - **Backend (API):** pronto e testado com dados em memória, com login real, permissões no servidor e as mesmas regras do frontend.
+> - **Frontend:** completo. Roda em dois modos:
+>   - **ligado à API**, com login real por e-mail e senha;
+>   - **demonstração**, sem servidor, com os dados no navegador, para apresentações.
+> - **Backend (API):** pronto e testado com dados em memória, com permissões no servidor e as mesmas regras do frontend.
 > - **Oracle:** esquema e repositório escritos, mas ainda não executados num banco real ([backend/db](backend/db/README.md)).
-> - **Próximo passo:** ligar o frontend à API.
 
 ## Funcionalidades
 
@@ -20,7 +21,7 @@ Projeto acadêmico. **Equipe:** Amanda Lordello, Davi Braz, Saulo Sousa, Thales 
 | **RF04** Otimização da agenda | Agenda sem conflito de local, árbitro ou time, um jogo por time por dia, fases em dias seguidos; reagendamento manual com checagem de conflitos |
 | **RF05** Painel visual | Chave interativa, tabelas de classificação, calendário em **lista** ou em **grade** (por dia ou por local), painel do organizador |
 | **RF06** Identidade visual | Nome, sigla e cor da organização aplicados aos seus torneios |
-| **RF07** Login | Simulado, com dois perfis: **organizador** e **espectador** |
+| **RF07** Login | Cadastro e login com e-mail e senha (hash scrypt, token JWT) nos perfis **organizador** e **espectador**; no modo demonstração, login simulado |
 
 **Permissões:** só o organizador dono do torneio cadastra, sorteia, registra súmulas e edita; o espectador só visualiza e favorita. Torneios privados pedem código de acesso (bloqueio temporário após 5 tentativas erradas).
 
@@ -28,23 +29,9 @@ Projeto acadêmico. **Equipe:** Amanda Lordello, Davi Braz, Saulo Sousa, Thales 
 
 Pré-requisito: [Node.js](https://nodejs.org) 20 ou mais recente.
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+### Com a API (login real)
 
-Abra http://localhost:5173 e entre como **Organizador** ou **Espectador**.
-
-Dados de demonstração:
-- **Copa Interclasse Horizonte 2026**: futsal, vôlei e natação em andamento (os três tipos de súmula).
-- **Liga Corporativa Society**: torneio **privado**, código `PLAY2026`, com conflitos de agenda para testar a otimização.
-- **Circuito Beach Tennis Verão**: inscrições abertas, pronto para sortear.
-- **Copa Bairro Basquete 3x3**: finalizado, de outro organizador (o organizador da demonstração só visualiza).
-
-O menu do usuário tem **Restaurar demonstração** para voltar aos dados iniciais.
-
-### API (backend)
+Em um terminal, a API:
 
 ```bash
 cd backend
@@ -52,7 +39,32 @@ npm install
 npm run dev
 ```
 
-Sobe em http://127.0.0.1:3333 com os mesmos dados de demonstração em memória. Usuários, rotas e configuração do Oracle estão no [README do backend](backend/README.md).
+Em outro, o frontend apontando para ela:
+
+```bash
+cd frontend
+npm install
+npm run dev:api
+```
+
+Abra http://localhost:5173 e entre com `organizador@playoff.dev` ou `visitante@playoff.dev`, senha `playoff123`, ou crie uma conta. Os dados ficam na API em memória e voltam ao início quando ela reinicia; para guardar de verdade, use o Oracle ([backend/db](backend/db/README.md)).
+
+### Modo demonstração (sem servidor)
+
+```bash
+cd frontend
+npm run dev
+```
+
+Entre como **Organizador** ou **Espectador**, sem senha.
+
+Dados de demonstração:
+- **Copa Interclasse Horizonte 2026**: futsal, vôlei e natação em andamento (os três tipos de súmula).
+- **Liga Corporativa Society**: torneio **privado**, código `PLAY2026`, com conflitos de agenda para testar a otimização.
+- **Circuito Beach Tennis Verão**: inscrições abertas, pronto para sortear.
+- **Copa Bairro Basquete 3x3**: finalizado, de outro organizador (o organizador da demonstração só visualiza).
+
+No modo demonstração, o menu do usuário tem **Restaurar demonstração** para voltar aos dados iniciais. Rotas da API, usuários e configuração do Oracle estão no [README do backend](backend/README.md).
 
 ## Testes e qualidade
 
@@ -64,13 +76,16 @@ npm test          # testes + cobertura (falha abaixo de 95%)
 npm run lint      # falha com qualquer aviso
 npm run typecheck # checagem de tipos, incluindo os testes
 npm run build     # build de produção
+npm run e2e       # (só frontend) ponta a ponta: navegador + API reais
 ```
 
 - **Motor** (`src/lib`): chaveamentos, classificação e desempate, agenda, regras de negócio e permissões, testados com funções puras.
 - **Telas** (`src/test`): fluxos completos com Testing Library, simulando organizador e espectador.
 - **Contra falso positivo:** qualquer `console.error`/`console.warn` durante um teste faz o teste falhar.
 - **API** (`backend/src/test`): requisições HTTP de verdade contra a API em memória, incluindo um campeonato completo, a recusa de cada rota de gestão para quem não é o dono, e a conversão para as tabelas Oracle conferida contra o próprio DDL.
-- **CI:** o GitHub Actions roda lint, tipos, testes e build do frontend e do backend em todo push e pull request para a `main`.
+- **Modo API** (`frontend/src/test/api-mode.test.tsx`): as telas contra o **backend real** rodando dentro do teste (sem imitação), incluindo login, sessão expirada, código de torneio privado conferido no servidor e regras recusadas pela API aparecendo na tela.
+- **Ponta a ponta** (`frontend/e2e`, Playwright): navegador de verdade, API e frontend compilado rodando como servidores. No Windows usa o Edge já instalado; no CI, o Chromium.
+- **CI:** o GitHub Actions roda lint, tipos, testes e build do frontend e do backend, e depois os testes de ponta a ponta, em todo push na `main` e no `devops` e em todo pull request.
 
 ## Estrutura
 

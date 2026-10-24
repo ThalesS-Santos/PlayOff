@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { useState } from 'react'
 import { useStore } from '../lib/store'
-import { editDetails, splitList, validateDetails, type TournamentDetails } from '../lib/tournament'
+import { splitList, validateDetails, type TournamentDetails } from '../lib/tournament'
 import type { Tournament } from '../lib/types'
 import { Button, Field, inputCls, Modal } from './ui'
 
@@ -15,7 +15,7 @@ export function EditTournamentModal({ t, open, onClose }: { t: Tournament; open:
 }
 
 function EditForm({ t, onClose }: { t: Tournament; onClose: () => void }) {
-  const { edit, toast, tournaments } = useStore()
+  const { editDetails, toast, tournaments } = useStore()
   const [d, setD] = useState<TournamentDetails & { venuesText: string }>({
     name: t.name,
     description: t.description,
@@ -32,11 +32,11 @@ function EditForm({ t, onClose }: { t: Tournament; onClose: () => void }) {
   const set = (p: Partial<typeof d>) => setD({ ...d, ...p })
   const details = (): TournamentDetails => ({ ...d, venues: splitList(d.venuesText) })
 
-  const save = () => {
+  const save = async () => {
     const errs = validateDetails(details(), tournaments, t.organizerId, t.id)
     setErrors(errs)
     if (errs.length) return
-    if (!edit(t.id, (x) => editDetails(x, details(), tournaments))) return
+    if (!(await editDetails(t.id, details()))) return
     toast({ title: 'Torneio atualizado', body: d.name.trim() })
     onClose()
   }

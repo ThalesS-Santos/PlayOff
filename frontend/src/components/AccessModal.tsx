@@ -1,17 +1,16 @@
 import { motion, useAnimationControls } from 'motion/react'
 import { KeyRound, Lock } from 'lucide-react'
 import { useState } from 'react'
-import { checkAccessCode } from '../lib/permissions'
 import { useStore } from '../lib/store'
 import type { Tournament } from '../lib/types'
 import { Button, inputCls, Modal } from './ui'
 
 /** Máquina de estados "Acessar torneio": verificando permissão → concedido | negado (tentar novamente). */
 export function AccessModal({ t, onClose, onGranted }: { t: Tournament | null; onClose: () => void; onGranted: (t: Tournament) => void }) {
-  const { dispatch, toast } = useStore()
+  const { unlock, toast } = useStore()
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [attempts, setAttempts] = useState<{ count: number; lockedUntil?: number }>({ count: 0 })
+  const [busy, setBusy] = useState(false)
   const shake = useAnimationControls()
 
   const close = () => {
@@ -20,19 +19,19 @@ export function AccessModal({ t, onClose, onGranted }: { t: Tournament | null; o
     onClose()
   }
 
-  const submit = () => {
-    if (!t) return
-    const { result, attempts: next } = checkAccessCode(t, code, attempts)
-    setAttempts(next)
+  const submit = async () => {
+    if (!t || busy) return
+    setBusy(true)
+    const result = await unlock(t, code)
+    setBusy(false)
     if (result.ok) {
-      dispatch({ type: 'unlock', id: t.id })
       toast({ title: 'Acesso concedido', body: t.name })
       setCode('')
       setError(null)
       onGranted(t)
       return
     }
-    setError(result.reason === 'bloqueado' ? `Muitas tentativas. Aguarde ${Math.ceil((result.retryInMs ?? 0) / 1000)} s e tente de novo.` : 'Código incorreto. Tente novamente.')
+    setError(result.message)
     void shake.start({ x: [0, -10, 10, -8, 8, -4, 0], transition: { duration: 0.45 } })
   }
 
@@ -51,7 +50,7 @@ export function AccessModal({ t, onClose, onGranted }: { t: Tournament | null; o
         className="mt-4"
         onSubmit={(e) => {
           e.preventDefault()
-          submit()
+          void submit()
         }}
       >
         <motion.div animate={shake}>
@@ -77,7 +76,9 @@ export function AccessModal({ t, onClose, onGranted }: { t: Tournament | null; o
           <Button type="button" variant="ghost" onClick={close}>
             Desistir
           </Button>
-          <Button type="submit">Entrar</Button>
+          <Button type="submit" disabled={busy}>
+            Entrar
+          </Button>
         </div>
       </form>
     </Modal>

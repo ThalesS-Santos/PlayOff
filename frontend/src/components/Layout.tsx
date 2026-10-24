@@ -53,7 +53,7 @@ function NavItem({ to, icon, children }: { to: string; icon: ReactNode; children
 }
 
 export function Navbar() {
-  const { user, dispatch, toast } = useStore()
+  const { user, logout, reset, toast, mode } = useStore()
   const nav = useNavigate()
   const [open, setOpen] = useState(false)
   const isOrg = user?.role === 'organizador'
@@ -122,19 +122,19 @@ export function Navbar() {
                     </MenuBtn>
                     <MenuBtn
                       icon={<RefreshCcw size={16} />}
-                      onClick={() => {
-                        dispatch({ type: 'reset' })
+                      onClick={async () => {
                         setOpen(false)
-                        toast({ title: 'Dados de demonstração restaurados', tone: 'info' })
+                        await reset()
+                        toast({ title: mode === 'api' ? 'Dados atualizados' : 'Dados de demonstração restaurados', tone: 'info' })
                       }}
                     >
-                      Restaurar demonstração
+                      {mode === 'api' ? 'Atualizar dados' : 'Restaurar demonstração'}
                     </MenuBtn>
                     <div className="my-1 h-px bg-line" />
                     <MenuBtn
                       icon={<LogOut size={16} />}
                       onClick={() => {
-                        dispatch({ type: 'logout' })
+                        logout()
                         nav('/')
                       }}
                     >

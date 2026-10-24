@@ -20,6 +20,15 @@ class NoopObserver {
     return []
   }
 }
+// o jsdom devolve, no TextEncoder, um Uint8Array de outro "realm" (falha em `instanceof Uint8Array`);
+// a biblioteca de token do backend (usada nos testes do modo API) recusa esse objeto
+const NodeTextEncoder = globalThis.TextEncoder
+globalThis.TextEncoder = class extends NodeTextEncoder {
+  encode(input?: string) {
+    return new Uint8Array(super.encode(input))
+  }
+} as typeof TextEncoder
+
 // eventos de ponteiro (efeitos de inclinação dos cartões); o jsdom só tem MouseEvent
 window.PointerEvent ??= class PointerEvent extends MouseEvent {} as unknown as typeof PointerEvent
 window.IntersectionObserver ??= NoopObserver as unknown as typeof IntersectionObserver

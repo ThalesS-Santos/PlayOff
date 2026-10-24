@@ -3,24 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { Crown, Gavel, Gift, Lock, Pencil, Plus, Shirt, Trash2, Trophy, UserPlus, X } from 'lucide-react'
 import { useState } from 'react'
 import { uid } from '../lib/engine'
-import {
-  addReferee,
-  entriesOpen,
-  lockedModalities,
-  prizeModality,
-  prizeWinners,
-  refereeAssignments,
-  removePrize,
-  removeReferee,
-  removeTeam,
-  TEAM_COLORS,
-  toggleSeed,
-  upsertPrize,
-  upsertTeam,
-  validatePrize,
-  validateReferee,
-  validateTeam,
-} from '../lib/registry'
+import { entriesOpen, lockedModalities, prizeModality, prizeWinners, refereeAssignments, TEAM_COLORS, validatePrize, validateReferee, validateTeam } from '../lib/registry'
 import { useStore } from '../lib/store'
 import type { Prize, Team, Tournament } from '../lib/types'
 import { rise, stagger } from './motion'
@@ -28,7 +11,7 @@ import { Button, Crest, Empty, Field, inputCls, Modal } from './ui'
 
 /** Aba de cadastros do organizador (RF02): times, jogadores, técnicos e árbitros. */
 export function RegistrationsTab({ t }: { t: Tournament }) {
-  const { edit, toast } = useStore()
+  const { toggleSeed, removeTeam, toast } = useStore()
   const [editing, setEditing] = useState<Team | null>(null)
   const [removing, setRemoving] = useState<Team | null>(null)
 
@@ -82,7 +65,7 @@ export function RegistrationsTab({ t }: { t: Tournament }) {
                       <button
                         key={m.id}
                         disabled={!open}
-                        onClick={() => edit(t.id, (x) => toggleSeed(x, m.id, team.id))}
+                        onClick={() => void toggleSeed(t.id, m.id, team.id)}
                         title={open ? 'Marcar/desmarcar como cabeça de chave' : 'Jogos já gerados: inscrição bloqueada'}
                         className={clsx(
                           'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors',
@@ -126,9 +109,10 @@ export function RegistrationsTab({ t }: { t: Tournament }) {
           <Button
             variant="danger"
             disabled={!!removing && lockedModalities(t, removing.id).length > 0}
-            onClick={() => {
-              if (edit(t.id, (x) => removeTeam(x, removing!.id))) toast({ title: 'Time excluído', body: removing!.name, tone: 'info' })
+            onClick={async () => {
+              const target = removing!
               setRemoving(null)
+              if (await removeTeam(t.id, target.id)) toast({ title: 'Time excluído', body: target.name, tone: 'info' })
             }}
           >
             Excluir
@@ -142,7 +126,7 @@ export function RegistrationsTab({ t }: { t: Tournament }) {
 /* ───────────── Editor de time ───────────── */
 
 function TeamEditor({ t, team, onClose }: { t: Tournament; team: Team | null; onClose: () => void }) {
-  const { edit, toast } = useStore()
+  const { saveTeam, toast } = useStore()
   const isNew = !!team && !t.teams.some((x) => x.id === team.id)
   const [draft, setDraft] = useState<Team | null>(team)
   const [shortTouched, setShortTouched] = useState(!isNew)
@@ -161,11 +145,11 @@ function TeamEditor({ t, team, onClose }: { t: Tournament; team: Team | null; on
     set({ players: [...draft.players, { id: `${draft.id}p_${uid('')}`, name: '', number: n }] })
   }
 
-  const save = () => {
+  const save = async () => {
     const errs = validateTeam(draft, t)
     setErrors(errs)
     if (errs.length) return
-    if (!edit(t.id, (x) => upsertTeam(x, draft, mods))) return
+    if (!(await saveTeam(t.id, draft, mods))) return
     toast({ title: isNew ? 'Time cadastrado' : 'Time atualizado', body: draft.name.trim() })
     onClose()
   }
@@ -285,7 +269,7 @@ function TeamEditor({ t, team, onClose }: { t: Tournament; team: Team | null; on
 /* ───────────── Prêmios ───────────── */
 
 function PrizesPanel({ t }: { t: Tournament }) {
-  const { edit, toast } = useStore()
+  const { savePrize, removePrize, toast } = useStore()
   const [editing, setEditing] = useState<Prize | null>(null)
   const isNew = !!editing && !t.prizes.some((p) => p.id === editing.id)
   const [errors, setErrors] = useState<string[]>([])
@@ -294,12 +278,12 @@ function PrizesPanel({ t }: { t: Tournament }) {
     setErrors([])
     setEditing(p)
   }
-  const save = () => {
+  const save = async () => {
     if (!editing) return
     const errs = validatePrize(editing)
     setErrors(errs)
     if (errs.length) return
-    if (!edit(t.id, (x) => upsertPrize(x, editing))) return
+    if (!(await savePrize(t.id, editing))) return
     toast({ title: isNew ? 'Prêmio cadastrado' : 'Prêmio atualizado', body: editing.name.trim() })
     setEditing(null)
   }
@@ -339,8 +323,8 @@ function PrizesPanel({ t }: { t: Tournament }) {
                   <Pencil size={14} />
                 </button>
                 <button
-                  onClick={() => {
-                    if (edit(t.id, (x) => removePrize(x, p.id))) toast({ title: 'Prêmio removido', body: p.name, tone: 'info' })
+                  onClick={async () => {
+                    if (await removePrize(t.id, p.id)) toast({ title: 'Prêmio removido', body: p.name, tone: 'info' })
                   }}
                   className="rounded-lg p-1.5 text-faint hover:bg-surface-2 hover:text-live"
                   aria-label={`Excluir ${p.name}`}
@@ -423,15 +407,15 @@ function PrizesPanel({ t }: { t: Tournament }) {
 /* ───────────── Árbitros ───────────── */
 
 function RefereesPanel({ t }: { t: Tournament }) {
-  const { edit, toast } = useStore()
+  const { addReferee, removeReferee, toast } = useStore()
   const [name, setName] = useState('')
   const [error, setError] = useState<string>()
 
-  const add = () => {
+  const add = async () => {
     const err = validateReferee(name, t)
     setError(err)
     if (err) return
-    if (!edit(t.id, (x) => addReferee(x, name))) return
+    if (!(await addReferee(t.id, name))) return
     toast({ title: 'Árbitro cadastrado', body: name.trim() })
     setName('')
   }
@@ -446,7 +430,7 @@ function RefereesPanel({ t }: { t: Tournament }) {
         className="mt-4 flex gap-2"
         onSubmit={(e) => {
           e.preventDefault()
-          add()
+          void add()
         }}
       >
         <input className={clsx(inputCls, 'h-10 min-w-0 flex-1')} value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome do árbitro" aria-label="Nome do árbitro" />
@@ -462,7 +446,7 @@ function RefereesPanel({ t }: { t: Tournament }) {
               {busy > 0 && <span className="text-xs text-faint">{busy} jogos</span>}
               <button
                 disabled={busy > 0}
-                onClick={() => edit(t.id, (x) => removeReferee(x, r))}
+                onClick={() => void removeReferee(t.id, r)}
                 title={busy ? 'Escalado em partidas pendentes' : 'Remover'}
                 className="rounded-lg p-1 text-faint hover:text-live disabled:opacity-30"
                 aria-label={`Remover ${r}`}

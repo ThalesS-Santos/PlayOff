@@ -9,7 +9,7 @@ import { uid } from '../lib/engine'
 import { FORMAT_LABEL } from '../lib/format'
 import { TEAM_COLORS } from '../lib/registry'
 import { useStore } from '../lib/store'
-import { createTournament, draftStepErrors, splitList, type TournamentDraft } from '../lib/tournament'
+import { draftStepErrors, splitList, type TournamentDraft } from '../lib/tournament'
 import type { Format, Prize, SumulaKind } from '../lib/types'
 
 const SPORTS: { name: string; kind: SumulaKind }[] = [
@@ -50,7 +50,7 @@ interface DraftMod {
 const STEPS = ['Dados', 'Modalidades', 'Equipes', 'Premiação', 'Revisão']
 
 export default function CreateTournament() {
-  const { user, dispatch, toast, tournaments } = useStore()
+  const { user, createTournament, toast, tournaments } = useStore()
   const nav = useNavigate()
   const [step, setStep] = useState(0)
   const [dir, setDir] = useState(1)
@@ -103,10 +103,10 @@ export default function CreateTournament() {
     setStep(to)
   }
 
-  const create = () => {
+  const create = async () => {
     if (!validate(4)) return
-    const t = createTournament(draft(), user!, tournaments)
-    dispatch({ type: 'upsert', t })
+    const t = await createTournament(draft())
+    if (!t) return
     setDone(true)
     setTimeout(() => {
       toast({ title: 'Torneio criado!', body: generateNow ? 'Chaveamento gerado e agenda montada.' : 'Publicado no catálogo.' })

@@ -4,11 +4,16 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
+  // só nos testes (o Vitest roda com mode "test"): permite carregar o backend (../backend)
+  // para os testes do modo API; o servidor de desenvolvimento continua restrito ao frontend
+  server: mode === 'test' ? { fs: { allow: ['..'] } } : undefined,
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // os testes de ponta a ponta (e2e/) rodam no Playwright, não aqui
+    include: ['src/**/*.test.{ts,tsx}'],
     // testes de interface com animações e várias telas: mais folga que o padrão de 5 s
     testTimeout: 20_000,
     coverage: {
@@ -20,4 +25,4 @@ export default defineConfig({
       thresholds: { lines: 95, statements: 95, functions: 95, branches: 95 },
     },
   },
-})
+}))

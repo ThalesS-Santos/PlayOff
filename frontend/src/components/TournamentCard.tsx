@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'motion/react'
 import { CalendarDays, Heart, Lock, MapPin, Users } from 'lucide-react'
+import type { TournamentSummary } from '../lib/api'
 import { progress } from '../lib/engine'
 import { useStore } from '../lib/store'
 import type { Tournament } from '../lib/types'
@@ -9,14 +10,14 @@ import { rise } from './motion'
 import { StatusBadge } from './ui'
 
 export function FavButton({ t, className }: { t: Tournament; className?: string }) {
-  const { user, dispatch, toast } = useStore()
+  const { user, toggleFavorite, toast } = useStore()
   const on = !!user && t.favoritedBy.includes(user.id)
   return (
     <motion.button
       whileTap={{ scale: 0.8 }}
-      onClick={(e) => {
+      onClick={async (e) => {
         e.stopPropagation()
-        dispatch({ type: 'toggleFav', id: t.id })
+        if (!(await toggleFavorite(t))) return
         toast({ title: on ? 'Removido dos favoritos' : 'Adicionado aos favoritos', body: t.name, tone: on ? 'info' : 'ok' })
       }}
       aria-pressed={on}
@@ -100,7 +101,7 @@ export function TournamentCard({ t, onOpen }: { t: Tournament; onOpen: () => voi
         <div className="flex items-center justify-between gap-2">
           <StatusBadge status={t.status} />
           <span className="flex items-center gap-1 text-xs text-muted">
-            <Users size={13} /> {t.teams.length} equipes
+            <Users size={13} /> {(t as TournamentSummary).teamCount ?? t.teams.length} equipes
           </span>
         </div>
         <h3 className="font-display mt-3 text-lg leading-snug font-semibold">{t.name}</h3>

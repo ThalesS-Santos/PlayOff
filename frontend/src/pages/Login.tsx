@@ -87,18 +87,133 @@ function HeroBracket() {
   )
 }
 
-export default function Login() {
-  const { dispatch, demoUsers } = useStore()
+function RolePicker({ role, onPick }: { role: Role; onPick: (r: Role) => void }) {
+  return (
+    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      {ROLES.map((r) => (
+        <motion.button
+          key={r.id}
+          type="button"
+          whileHover={{ y: -2 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => onPick(r.id)}
+          className={clsx('relative rounded-2xl border p-4 text-left transition-colors', role === r.id ? 'border-transparent' : 'border-line hover:border-faint')}
+        >
+          {role === r.id && <motion.span layoutId="role-ring" className="absolute inset-0 rounded-2xl bg-brand-soft ring-2 ring-brand" transition={spring} />}
+          <span className="relative block">
+            <r.icon size={20} className={role === r.id ? 'text-brand-ink' : 'text-muted'} />
+            <span className="mt-2 block font-semibold">{r.title}</span>
+            <span className="mt-1 block text-xs leading-relaxed text-muted">{r.body}</span>
+          </span>
+        </motion.button>
+      ))}
+    </div>
+  )
+}
+
+/** Modo demonstração: escolhe o perfil, sem senha. */
+function DemoLogin() {
+  const { loginDemo, demoUsers } = useStore()
   const nav = useNavigate()
   const [role, setRole] = useState<Role>('organizador')
   const [name, setName] = useState('Thales Sena')
 
   const enter = () => {
     const base = demoUsers.find((u) => u.role === role)!
-    dispatch({ type: 'login', user: { ...base, name: name.trim() || base.name } })
+    loginDemo({ ...base, name: name.trim() || base.name })
     nav('/torneios')
   }
 
+  return (
+    <>
+      <p className="text-sm font-medium text-muted">Entrar como</p>
+      <RolePicker
+        role={role}
+        onPick={(r) => {
+          setRole(r)
+          setName(r === 'organizador' ? 'Thales Sena' : 'Visitante')
+        }}
+      />
+      <form
+        className="mt-4 flex flex-col gap-3 sm:flex-row"
+        onSubmit={(e) => {
+          e.preventDefault()
+          enter()
+        }}
+      >
+        <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Seu nome" aria-label="Seu nome" />
+        <Button type="submit" size="lg" className="h-11 shrink-0">
+          Entrar <ArrowRight size={18} />
+        </Button>
+      </form>
+      <p className="mt-3 text-xs text-faint">Modo demonstração: login simulado, sem senha. Dados ficam só no seu navegador.</p>
+    </>
+  )
+}
+
+/** Modo API: login com e-mail e senha, ou cadastro (RF07). */
+function AccountLogin() {
+  const { login, register } = useStore()
+  const nav = useNavigate()
+  const [tab, setTab] = useState<'entrar' | 'criar'>('entrar')
+  const [busy, setBusy] = useState(false)
+  const [form, setForm] = useState({ name: '', email: '', password: '', orgName: '', role: 'espectador' as Role })
+  const set = (p: Partial<typeof form>) => setForm({ ...form, ...p })
+
+  const submit = async () => {
+    setBusy(true)
+    const ok =
+      tab === 'entrar'
+        ? await login(form.email, form.password)
+        : await register({ name: form.name, email: form.email, password: form.password, role: form.role, orgName: form.role === 'organizador' ? form.orgName : undefined })
+    setBusy(false)
+    if (ok) nav('/torneios')
+  }
+
+  return (
+    <>
+      <div className="flex gap-1 rounded-xl bg-surface-2 p-1" role="tablist">
+        {(['entrar', 'criar'] as const).map((k) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={clsx('h-9 flex-1 rounded-lg text-sm font-medium', tab === k ? 'bg-surface text-ink shadow' : 'text-muted hover:text-ink')}>
+            {k === 'entrar' ? 'Entrar' : 'Criar conta'}
+          </button>
+        ))}
+      </div>
+      <form
+        className="mt-4 space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void submit()
+        }}
+      >
+        {tab === 'criar' && (
+          <>
+            <RolePicker role={form.role} onPick={(role) => set({ role })} />
+            <input className={inputCls} value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="Seu nome" aria-label="Seu nome" autoComplete="name" />
+            {form.role === 'organizador' && <input className={inputCls} value={form.orgName} onChange={(e) => set({ orgName: e.target.value })} placeholder="Nome da organização" aria-label="Nome da organização" />}
+          </>
+        )}
+        <input className={inputCls} type="email" value={form.email} onChange={(e) => set({ email: e.target.value })} placeholder="E-mail" aria-label="E-mail" autoComplete="email" />
+        <input
+          className={inputCls}
+          type="password"
+          value={form.password}
+          onChange={(e) => set({ password: e.target.value })}
+          placeholder={tab === 'criar' ? 'Senha (mín. 8 caracteres)' : 'Senha'}
+          aria-label="Senha"
+          autoComplete={tab === 'criar' ? 'new-password' : 'current-password'}
+        />
+        <Button type="submit" size="lg" className="h-11 w-full" disabled={busy}>
+          {tab === 'entrar' ? 'Entrar' : 'Criar conta'} <ArrowRight size={18} />
+        </Button>
+      </form>
+      {import.meta.env.DEV && <p className="mt-3 text-xs text-faint">Servidor de desenvolvimento: organizador@playoff.dev ou visitante@playoff.dev, senha playoff123.</p>}
+    </>
+  )
+}
+
+export default function Login() {
+  const { mode } = useStore()
   return (
     <div className="app-glow relative min-h-screen overflow-hidden">
       <div className="grid-dots pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]" />
@@ -132,41 +247,7 @@ export default function Login() {
           </motion.ul>
 
           <motion.div variants={rise} className="mt-10 max-w-lg rounded-3xl border border-line bg-surface/70 p-5 backdrop-blur sm:p-6">
-            <p className="text-sm font-medium text-muted">Entrar como</p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {ROLES.map((r) => (
-                <motion.button
-                  key={r.id}
-                  whileHover={{ y: -2 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => {
-                    setRole(r.id)
-                    setName(r.id === 'organizador' ? 'Thales Sena' : 'Visitante')
-                  }}
-                  className={clsx('relative rounded-2xl border p-4 text-left transition-colors', role === r.id ? 'border-transparent' : 'border-line hover:border-faint')}
-                >
-                  {role === r.id && <motion.span layoutId="role-ring" className="absolute inset-0 rounded-2xl bg-brand-soft ring-2 ring-brand" transition={spring} />}
-                  <span className="relative block">
-                    <r.icon size={20} className={role === r.id ? 'text-brand-ink' : 'text-muted'} />
-                    <span className="mt-2 block font-semibold">{r.title}</span>
-                    <span className="mt-1 block text-xs leading-relaxed text-muted">{r.body}</span>
-                  </span>
-                </motion.button>
-              ))}
-            </div>
-            <form
-              className="mt-4 flex flex-col gap-3 sm:flex-row"
-              onSubmit={(e) => {
-                e.preventDefault()
-                enter()
-              }}
-            >
-              <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Seu nome" aria-label="Seu nome" />
-              <Button type="submit" size="lg" className="h-11 shrink-0">
-                Entrar <ArrowRight size={18} />
-              </Button>
-            </form>
-            <p className="mt-3 text-xs text-faint">Protótipo: login simulado, sem senha. Dados ficam só no seu navegador.</p>
+            {mode === 'api' ? <AccountLogin /> : <DemoLogin />}
           </motion.div>
         </motion.div>
 

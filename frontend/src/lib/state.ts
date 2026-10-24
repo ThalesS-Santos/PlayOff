@@ -5,6 +5,8 @@ import type { Organization, Tournament, User } from './types'
 /* Estado da aplicação (persistido no navegador) e o reducer que o altera. */
 
 export const STORAGE_KEY = 'playoff:v3'
+/** Sessão do modo API (token + usuário), guardada no navegador. */
+export const SESSION_KEY = 'playoff:session'
 
 export interface State {
   user: User | null
@@ -22,6 +24,11 @@ export type Action =
   | { type: 'remove'; id: string }
   | { type: 'org'; org: Organization }
   | { type: 'reset' }
+  /* modo API: dados que vieram do servidor (que já conferiu as permissões) */
+  | { type: 'serverLoaded'; user: User | null; orgs: Organization[]; tournaments: Tournament[]; unlocked: string[] }
+  | { type: 'serverTournament'; t: Tournament }
+  | { type: 'serverRemoved'; id: string }
+  | { type: 'serverOrg'; org: Organization }
 
 export const freshState = (user: User | null = null): State => ({ user, orgs: ORGS, tournaments: buildSeed(), unlocked: [] })
 
@@ -80,5 +87,16 @@ export function reducer(s: State, a: Action): State {
       return { ...s, orgs: s.orgs.map((o) => (o.id === a.org.id ? a.org : o)) }
     case 'reset':
       return freshState(s.user)
+    case 'serverLoaded':
+      return { user: a.user, orgs: a.orgs, tournaments: a.tournaments, unlocked: a.unlocked }
+    case 'serverTournament':
+      return {
+        ...s,
+        tournaments: s.tournaments.some((t) => t.id === a.t.id) ? s.tournaments.map((t) => (t.id === a.t.id ? a.t : t)) : [a.t, ...s.tournaments],
+      }
+    case 'serverRemoved':
+      return { ...s, tournaments: s.tournaments.filter((t) => t.id !== a.id) }
+    case 'serverOrg':
+      return { ...s, orgs: s.orgs.some((o) => o.id === a.org.id) ? s.orgs.map((o) => (o.id === a.org.id ? a.org : o)) : [...s.orgs, a.org] }
   }
 }
