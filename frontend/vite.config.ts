@@ -2,6 +2,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { fileURLToPath } from 'node:url'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -9,6 +10,8 @@ export default defineConfig(({ mode }) => ({
   // só nos testes (o Vitest roda com mode "test"): permite carregar o backend (../backend)
   // para os testes do modo API; o servidor de desenvolvimento continua restrito ao frontend
   server: mode === 'test' ? { fs: { allow: ['..'] } } : undefined,
+  // "@backend/..." aponta para backend/src (também só nos testes)
+  resolve: mode === 'test' ? { alias: { '@backend': fileURLToPath(new URL('../backend/src', import.meta.url)) } } : undefined,
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],

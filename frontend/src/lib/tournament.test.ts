@@ -122,6 +122,10 @@ describe('sorteio', () => {
     const t = draw(base({ modalities: [mod('m', ids(9), { format: 'grupos_mata' })] }), 'm', { groupCount: 3, advance: 1 })
     expect(t.modalities[0].groups).toHaveLength(3)
     expect(t.modalities[0].advancePerGroup).toBe(1)
+    // sem opções, mantém o que a modalidade já tinha (turno e returno, classificados)
+    const liga = draw(base({ modalities: [mod('m', ids(4), { format: 'pontos_corridos', returno: true })] }), 'm')
+    expect(liga.modalities[0].returno).toBe(true)
+    expect(liga.modalities[0].matches).toHaveLength(12)
   })
 
   it('recusa torneio encerrado, modalidade inexistente ou com menos de 2 times', () => {
@@ -155,6 +159,8 @@ describe('dados do torneio (criar/editar)', () => {
       'Torneio privado precisa de um código com 4+ caracteres.',
     ])
     expect(validateDetails(details({ endDate: '2026-11-01' }), [], 'u1')).toEqual(['A data final deve ser depois da inicial.'])
+    // privado sem código nenhum
+    expect(validateDetails(details({ visibility: 'privado' }), [], 'u1')).toEqual(['Torneio privado precisa de um código com 4+ caracteres.'])
     for (const venues of [['Q1', ' '], ['Q1', ' q1 ']])
       expect(validateDetails(details({ venues }), [], 'u1')).toEqual(['Quadras e espaços não podem ter nome vazio ou repetido.'])
   })

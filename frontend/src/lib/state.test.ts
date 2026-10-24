@@ -93,3 +93,15 @@ describe('reducer', () => {
     expect(s.tournaments.some((t) => t.id === 't1')).toBe(true)
   })
 })
+
+describe('dados vindos do servidor', () => {
+  it('organização: substitui a que já existe e acrescenta a nova', () => {
+    const s = as(null)
+    const [first] = s.orgs
+    const renamed = reducer(s, { type: 'serverOrg', org: { ...first, name: 'Renomeada' } })
+    expect(renamed.orgs).toHaveLength(s.orgs.length)
+    expect(renamed.orgs.find((o) => o.id === first.id)!.name).toBe('Renomeada')
+    const added = reducer(s, { type: 'serverOrg', org: { id: 'nova', name: 'Nova', short: 'NV', hue: 10 } })
+    expect(added.orgs.map((o) => o.id)).toEqual([...s.orgs.map((o) => o.id), 'nova'])
+  })
+})

@@ -22,7 +22,8 @@ interface BackendModules {
   seedRepo(repo: unknown): Promise<void>
 }
 
-const backend = (path: string) => import(/* @vite-ignore */ `../../../backend/src/${path}`)
+// "@backend" é um apelido para backend/src, definido no vite.config.ts só para os testes
+const backend = (path: string) => import(/* @vite-ignore */ `@backend/${path}`)
 
 export const API_URL = 'http://api.test'
 

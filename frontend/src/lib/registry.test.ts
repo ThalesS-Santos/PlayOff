@@ -114,6 +114,8 @@ describe('prêmios', () => {
     t = { ...t, modalities: [generateMatches(t.modalities[0])] }
     const p = prize({ modalityId: 'm1' })
     expect(prizeWinners(t, p)).toEqual([])
+    // prêmio "Geral" num torneio com várias modalidades: sem modalidade definida, sem contemplados
+    expect(prizeWinners(tournament(), prize({ modalityId: undefined }))).toEqual([])
     const final = t.modalities[0].matches[0]
     t = { ...t, modalities: [applySumula(t.modalities[0], final.id, { kind: 'pontos', a: 0, b: 1, cards: [] })] }
     expect(prizeWinners(t, p).map((x) => x.id)).toEqual([final.b])
@@ -139,6 +141,7 @@ describe('árbitros', () => {
     expect(validateReferee('  ', tournament())).toBeDefined()
     expect(validateReferee('rita', tournament())).toBe('Árbitro já cadastrado.')
     expect(addReferee(tournament(), ' Caio ').referees).toEqual(['Rita', 'Caio'])
+    expect(() => addReferee(tournament(), ' rita ')).toThrow('Árbitro já cadastrado.')
   })
 
   it('não remove árbitro escalado em partida pendente', () => {

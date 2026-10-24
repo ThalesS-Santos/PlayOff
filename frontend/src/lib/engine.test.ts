@@ -532,3 +532,55 @@ describe('dados de demonstração', () => {
     }
   })
 })
+
+describe('casos de borda do motor', () => {
+  const tour = (p: Partial<Tournament> = {}): Tournament => ({
+    id: 't', name: 'T', description: '', orgId: 'o', organizerId: 'u', visibility: 'publico', status: 'chaveamento',
+    startDate: '2026-11-10', endDate: '2026-11-20', city: '', venueName: '', venues: ['Q1', 'Q2'], referees: ['R1', 'R2'], cover: ['#000', '#fff'],
+    teams: [], prizes: [], favoritedBy: [], createdAt: 0, modalities: [generateMatches(mod({ format: 'eliminacao', teamIds: teams(8) }))], ...p,
+  })
+  const match = (p: Partial<Match>): Match => ({ id: 'x', phase: 'Final', round: 1, slot: 0, a: 'A', b: 'B', status: 'encerrada', ...p })
+
+  it('vencedor: empate sem pênaltis decisivos não tem vencedor; prova não tem vencedor direto', () => {
+    expect(winnerOf(match({ sumula: { kind: 'pontos', a: 1, b: 1, cards: [] } }))).toBeUndefined()
+    expect(winnerOf(match({ sumula: { kind: 'pontos', a: 1, b: 1, penA: 4, penB: 4, cards: [] } }))).toBeUndefined()
+    expect(winnerOf(match({ sumula: { kind: 'pontos', a: 1, b: 1, penA: 3, penB: 5, cards: [] } }))).toBe('B')
+    expect(winnerOf(match({ sumula: { kind: 'set', sets: [[25, 20], [20, 25]], cards: [] } }))).toBeUndefined()
+    expect(winnerOf(match({ sumula: { kind: 'colocacao', entries: [] } }))).toBeUndefined()
+  })
+
+  it('colocação além do pódio não existe', () => {
+    const done = playAll(generateMatches(mod({ format: 'eliminacao', teamIds: teams(4) })))
+    expect(placeOf(done, 1)).toEqual(['t1'])
+    expect(placeOf(done, 4)).toEqual([])
+  })
+
+  it('reagendamento: partida inexistente, horário fora da grade, local vazio e time sem cadastro', () => {
+    const t = tour()
+    expect(slotConflicts(t, 'nada', { date: '2026-11-10', time: '09:00', venue: 'Q1', referee: 'R1' })).toEqual(['Partida não encontrada.'])
+    const [x, y] = t.modalities[0].matches.filter((m) => m.round === 1)
+    expect(slotConflicts(t, x.id, { date: '2026-11-19', time: '07:00', venue: 'Q1', referee: 'R1' })).toContain('Horário fora da grade.')
+    expect(slotConflicts(t, x.id, { date: '2026-11-19', time: '20:00', venue: '', referee: 'R1' })).toContain('Local não é um espaço desta modalidade.')
+    // mesmo horário de outra partida com um time em comum: sem cadastro do time, o aviso usa "Um time"
+    const s = scheduleTournament(t)
+    const [sx, sy] = s.modalities[0].matches.filter((m) => m.id === x.id || m.id === y.id)
+    const shared = { ...s, modalities: [{ ...s.modalities[0], matches: s.modalities[0].matches.map((m) => (m.id === sy.id ? { ...m, a: sx.a } : m)) }] }
+    expect(slotConflicts(shared, sx.id, { date: sy.date!, time: sy.time!, venue: 'Q1', referee: 'R1' }).join()).toMatch(/Um time já joga nesse horário/)
+  })
+
+  it('conflitos: o mesmo árbitro em dois locais no mesmo horário', () => {
+    const t = scheduleTournament(tour())
+    const [a, b] = t.modalities[0].matches.filter((m) => m.round === 1)
+    const clash = { ...t, modalities: [{ ...t.modalities[0], matches: t.modalities[0].matches.map((m) => (m.id === b.id ? { ...m, date: a.date, time: a.time, venue: a.venue === 'Q1' ? 'Q2' : 'Q1', referee: a.referee } : m)) }] }
+    expect(detectConflicts(clash).map((c) => c.reason)).toEqual([expect.stringMatching(/^Árbitro R\d escalado duas vezes/)])
+  })
+
+  it('agenda: com um só árbitro, duas quadras não jogam ao mesmo tempo; "a partir de" depois do fim recomeça do início', () => {
+    const one = scheduleTournament(tour({ referees: ['R1'] }))
+    const keys = one.modalities[0].matches.filter((m) => !m.bye).map((m) => `${m.date} ${m.time}`)
+    expect(new Set(keys).size).toBe(keys.length)
+    expect(detectConflicts(one)).toEqual([])
+    const late = scheduleTournament(tour(), '2027-01-01')
+    expect(late.modalities[0].matches.filter((m) => !m.bye).every((m) => m.date && m.date >= '2026-11-10')).toBe(true)
+  })
+})
