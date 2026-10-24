@@ -1,4 +1,6 @@
 import cors from '@fastify/cors'
+import helmet from '@fastify/helmet'
+import rateLimit from '@fastify/rate-limit'
 import Fastify from 'fastify'
 import { ZodError } from 'zod'
 import { verifyToken } from './auth/token'
@@ -13,11 +15,23 @@ export interface AppOptions {
   jwtSecret: string
   corsOrigin?: string
   logger?: boolean
+  /** pedidos por IP a cada `windowMs`: qualquer rota (`max`) e login/cadastro (`authMax`) */
+  rateLimit?: { max: number; authMax: number; windowMs: number }
 }
 
-export function buildApp({ repo, jwtSecret, corsOrigin = 'http://localhost:5173', logger = false }: AppOptions) {
+export const DEFAULT_RATE_LIMIT = { max: 600, authMax: 10, windowMs: 60_000 }
+
+export function buildApp({ repo, jwtSecret, corsOrigin = 'http://localhost:5173', logger = false, rateLimit: limits = DEFAULT_RATE_LIMIT }: AppOptions) {
   const app = Fastify({ logger, bodyLimit: 1_000_000 })
   app.register(cors, { origin: corsOrigin })
+  // cabeçalhos de segurança; a resposta é lida por outra origem (o frontend), liberada pelo CORS
+  app.register(helmet, { crossOriginResourcePolicy: { policy: 'cross-origin' } })
+  // limite de pedidos por IP (o login e o cadastro têm um limite menor, nas próprias rotas)
+  app.register(rateLimit, {
+    max: limits.max,
+    timeWindow: limits.windowMs,
+    errorResponseBuilder: (_req, ctx) => new HttpError(429, 'muitas_tentativas', `Muitas tentativas. Tente de novo em ${Math.ceil(ctx.ttl / 1000)} s.`),
+  })
 
   // identifica o usuário pelo token (rotas públicas funcionam sem ele)
   app.decorateRequest('user', null)
@@ -50,7 +64,7 @@ export function buildApp({ repo, jwtSecret, corsOrigin = 'http://localhost:5173'
     await repo.ping()
     return { ok: true }
   })
-  app.register(authRoutes, { prefix: '/api/v1', repo, jwtSecret })
+  app.register(authRoutes, { prefix: '/api/v1', repo, jwtSecret, authLimit: { max: limits.authMax, timeWindow: limits.windowMs } })
   app.register(tournamentRoutes, { prefix: '/api/v1', repo })
   app.register(manageRoutes, { prefix: '/api/v1', repo })
   return app

@@ -69,3 +69,40 @@ describe('repositório em memória', () => {
     expect(await repo.accessList('u2')).toEqual([])
   })
 })
+
+describe('proteções da API', () => {
+  it('login e cadastro: depois do limite por IP, 429 com mensagem; outras rotas seguem livres', async () => {
+    const app = buildApp({ repo: new MemoryRepo(), jwtSecret: SECRET, rateLimit: { max: 100, authMax: 3, windowMs: 60_000 } })
+    const login = () => app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { email: 'a@b.com', password: 'errada123' } })
+    for (let i = 0; i < 3; i++) expect((await login()).statusCode).toBe(401)
+    const blocked = await login()
+    expect(blocked.statusCode).toBe(429)
+    expect(blocked.json()).toMatchObject({ code: 'muitas_tentativas', message: expect.stringMatching(/^Muitas tentativas\. Tente de novo em \d+ s\.$/) })
+    expect(blocked.headers['retry-after']).toBeDefined()
+    expect((await app.inject({ method: 'GET', url: '/api/v1/torneios' })).statusCode).toBe(200)
+    // o cadastro tem a sua própria conta
+    const reg = (n: number) => app.inject({ method: 'POST', url: '/api/v1/auth/registro', payload: { name: 'Yuri', email: `y${n}@b.com`, password: '12345678', role: 'espectador' } })
+    for (let i = 0; i < 3; i++) expect((await reg(i)).statusCode).toBe(201)
+    expect((await reg(9)).statusCode).toBe(429)
+  })
+
+  it('limite geral por IP vale para todas as rotas', async () => {
+    const app = buildApp({ repo: new MemoryRepo(), jwtSecret: SECRET, rateLimit: { max: 2, authMax: 2, windowMs: 60_000 } })
+    const get = () => app.inject({ method: 'GET', url: '/api/v1/organizacoes' })
+    expect((await get()).statusCode).toBe(200)
+    expect((await get()).statusCode).toBe(200)
+    expect((await get()).statusCode).toBe(429)
+  })
+
+  it('cabeçalhos de segurança em toda resposta', async () => {
+    const { call } = await makeApp()
+    const r = await call('GET', '/torneios')
+    expect(r.headers).toMatchObject({
+      'x-content-type-options': 'nosniff',
+      'x-frame-options': 'SAMEORIGIN',
+      'strict-transport-security': expect.stringContaining('max-age='),
+      'cross-origin-resource-policy': 'cross-origin',
+    })
+    expect(r.headers['content-security-policy']).toContain("default-src 'self'")
+  })
+})

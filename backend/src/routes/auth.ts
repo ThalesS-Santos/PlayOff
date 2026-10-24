@@ -11,13 +11,15 @@ import { Login, OrgUpdate, Register } from '../schemas'
 
 let dummyHash: string | undefined
 
-export const authRoutes: FastifyPluginAsync<{ repo: Repo; jwtSecret: string }> = async (app, { repo, jwtSecret }) => {
+export const authRoutes: FastifyPluginAsync<{ repo: Repo; jwtSecret: string; authLimit: { max: number; timeWindow: number } }> = async (app, { repo, jwtSecret, authLimit }) => {
+  // contra adivinhação de senha e cadastro em massa
+  const limited = { config: { rateLimit: authLimit } }
   const session = async (user: { id: string; name: string; role: 'organizador' | 'espectador'; orgId?: string }) => ({
     token: await signToken(user.id, jwtSecret),
     user: { id: user.id, name: user.name, role: user.role, orgId: user.orgId },
   })
 
-  app.post('/auth/registro', async (req, reply) => {
+  app.post('/auth/registro', limited, async (req, reply) => {
     const body = Register.parse(req.body)
     if (body.role === 'organizador' && !body.orgName?.trim()) throw new HttpError(400, 'validacao', 'Organizador precisa informar o nome da organização.')
     if (await repo.findUserByEmail(body.email)) throw new HttpError(409, 'duplicado', 'E-mail já cadastrado.')
@@ -32,7 +34,7 @@ export const authRoutes: FastifyPluginAsync<{ repo: Repo; jwtSecret: string }> =
     return reply.status(201).send(await session(user))
   })
 
-  app.post('/auth/login', async (req) => {
+  app.post('/auth/login', limited, async (req) => {
     const body = Login.parse(req.body)
     const user = await repo.findUserByEmail(body.email)
     // mesma resposta (e mesmo custo de hash) para e-mail inexistente e senha errada: não revela quem tem conta

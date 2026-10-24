@@ -14,32 +14,33 @@ oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT
 
 const DATE_COLUMNS = new Set(['DATA_INICIO', 'DATA_FIM', 'DATA_PARTIDA'])
 
-/** Como achar as linhas de cada tabela filha de um torneio (:id = id do torneio). */
-const MODS = 'SELECT ID FROM MODALIDADE WHERE ID_TORNEIO = :id'
-const MATCHES = `SELECT p.ID FROM PARTIDA p JOIN MODALIDADE m ON p.ID_MODALIDADE = m.ID WHERE m.ID_TORNEIO = :id`
-const SCOPE: Record<ChildTable, string> = {
-  TORNEIO_LOCAL: 'ID_TORNEIO = :id',
-  TORNEIO_ARBITRO: 'ID_TORNEIO = :id',
-  TIMES: 'ID_TORNEIO = :id',
-  JOGADORES: 'ID_TIME IN (SELECT ID FROM TIMES WHERE ID_TORNEIO = :id)',
-  MODALIDADE: 'ID_TORNEIO = :id',
-  MODALIDADE_LOCAL: `ID_MODALIDADE IN (${MODS})`,
-  PARTICIPACAO: `ID_MODALIDADE IN (${MODS})`,
-  GRUPO: `ID_MODALIDADE IN (${MODS})`,
-  GRUPO_TIME: `ID_GRUPO IN (SELECT g.ID FROM GRUPO g JOIN MODALIDADE m ON g.ID_MODALIDADE = m.ID WHERE m.ID_TORNEIO = :id)`,
-  PARTIDA: `ID_MODALIDADE IN (${MODS})`,
-  PARTIDA_PARTICIPANTE: `ID_PARTIDA IN (${MATCHES})`,
-  SUMULA: `ID_PARTIDA IN (${MATCHES})`,
-  SUMULA_PONTOS: `ID_PARTIDA IN (${MATCHES})`,
-  SUMULA_SET: `ID_PARTIDA IN (${MATCHES})`,
-  SUMULA_COLOCACAO: `ID_PARTIDA IN (${MATCHES})`,
-  CARTAO: `ID_PARTIDA IN (${MATCHES})`,
-  PREMIO: 'ID_TORNEIO = :id',
+/** Expressão SQL que dá o torneio dono de cada linha das tabelas filhas (alias t). */
+const BY_MOD = (col: string) => `(SELECT m.ID_TORNEIO FROM MODALIDADE m WHERE m.ID = ${col})`
+const BY_MATCH = BY_MOD('(SELECT p.ID_MODALIDADE FROM PARTIDA p WHERE p.ID = t.ID_PARTIDA)')
+const OWNER: Record<ChildTable, string> = {
+  TORNEIO_LOCAL: 't.ID_TORNEIO',
+  TORNEIO_ARBITRO: 't.ID_TORNEIO',
+  TIMES: 't.ID_TORNEIO',
+  JOGADORES: '(SELECT x.ID_TORNEIO FROM TIMES x WHERE x.ID = t.ID_TIME)',
+  MODALIDADE: 't.ID_TORNEIO',
+  MODALIDADE_LOCAL: BY_MOD('t.ID_MODALIDADE'),
+  PARTICIPACAO: BY_MOD('t.ID_MODALIDADE'),
+  GRUPO: BY_MOD('t.ID_MODALIDADE'),
+  GRUPO_TIME: BY_MOD('(SELECT g.ID_MODALIDADE FROM GRUPO g WHERE g.ID = t.ID_GRUPO)'),
+  PARTIDA: BY_MOD('t.ID_MODALIDADE'),
+  PARTIDA_PARTICIPANTE: BY_MATCH,
+  SUMULA: BY_MATCH,
+  SUMULA_PONTOS: BY_MATCH,
+  SUMULA_SET: BY_MATCH,
+  SUMULA_COLOCACAO: BY_MATCH,
+  CARTAO: BY_MATCH,
+  PREMIO: 't.ID_TORNEIO',
 }
+const OWNER_COL = 'DONO_TORNEIO__'
 
 /** SELECT que devolve as colunas DATE como texto 'AAAA-MM-DD' (evita fuso horário). */
-const selectWithDates = (table: string, where: string, dateCols: string[]) =>
-  `SELECT t.*${dateCols.map((c) => `, TO_CHAR(t.${c}, 'YYYY-MM-DD') AS ${c}_TXT`).join('')} FROM ${table} t WHERE ${where}`
+const selectWithDates = (table: string, where: string, dateCols: string[], extra = '') =>
+  `SELECT t.*${extra}${dateCols.map((c) => `, TO_CHAR(t.${c}, 'YYYY-MM-DD') AS ${c}_TXT`).join('')} FROM ${table} t WHERE ${where}`
 const fixDates = (r: Row, dateCols: string[]): Row => {
   const out = { ...r }
   for (const c of dateCols) {
@@ -129,24 +130,36 @@ export class OracleRepo implements Repo {
   }
 
   async listTournaments() {
-    const ids = await this.with(async (c) => ((await c.execute<Row>('SELECT ID FROM TORNEIO ORDER BY CRIADO_EM_MS DESC')).rows ?? []).map((r) => String(r.ID)))
-    const all = await Promise.all(ids.map((id) => this.getTournament(id)))
-    return all.filter((t): t is Tournament => !!t)
+    return this.with((c) => this.loadTournaments(c, '1 = 1', {}))
   }
 
   async getTournament(id: string) {
-    return this.with(async (c) => {
-      const head = (await c.execute<Row>(selectWithDates('TORNEIO', 't.ID = :id', ['DATA_INICIO', 'DATA_FIM']), { id })).rows?.[0]
-      if (!head) return undefined
-      const rows = { TORNEIO: fixDates(head, ['DATA_INICIO', 'DATA_FIM']) } as TournamentRows
-      for (const table of CHILD_TABLES) {
-        const dates = table === 'PARTIDA' ? ['DATA_PARTIDA'] : []
-        const r = await c.execute<Row>(selectWithDates(table, SCOPE[table], dates), { id })
-        rows[table] = (r.rows ?? []).map((x) => fixDates(x, dates))
+    return this.with(async (c) => (await this.loadTournaments(c, 't.ID = :id', { id }))[0])
+  }
+
+  /**
+   * Monta os torneios escolhidos com uma consulta por tabela, qualquer que seja a
+   * quantidade de torneios (sem uma rodada de consultas para cada torneio).
+   */
+  private async loadTournaments(c: oracledb.Connection, where: string, binds: Record<string, string>) {
+    const heads = (await c.execute<Row>(`${selectWithDates('TORNEIO', where, ['DATA_INICIO', 'DATA_FIM'])} ORDER BY t.CRIADO_EM_MS DESC`, binds)).rows ?? []
+    if (!heads.length) return []
+    const byId = new Map(heads.map((h) => [String(h.ID), { TORNEIO: fixDates(h, ['DATA_INICIO', 'DATA_FIM']) } as TournamentRows]))
+    // as linhas filhas dos torneios escolhidos (o filtro do TORNEIO aplicado ao dono)
+    const owners = `SELECT t.ID FROM TORNEIO t WHERE ${where}`
+    for (const table of CHILD_TABLES) {
+      const dates = table === 'PARTIDA' ? ['DATA_PARTIDA'] : []
+      for (const rows of byId.values()) rows[table] = []
+      const r = await c.execute<Row>(selectWithDates(table, `${OWNER[table]} IN (${owners})`, dates, `, ${OWNER[table]} AS ${OWNER_COL}`), binds)
+      for (const x of r.rows ?? []) {
+        const { [OWNER_COL]: owner, ...row } = fixDates(x, dates)
+        byId.get(String(owner))![table].push(row)
       }
-      const favs = (await c.execute<Row>('SELECT ID_USUARIO FROM FAVORITO WHERE ID_TORNEIO = :id', { id })).rows ?? []
-      return rowsToTournament(rows, favs.map((f) => String(f.ID_USUARIO)))
-    })
+    }
+    const favs = new Map<string, string[]>()
+    for (const f of (await c.execute<Row>(`SELECT ID_USUARIO, ID_TORNEIO FROM FAVORITO WHERE ID_TORNEIO IN (${owners})`, binds)).rows ?? [])
+      favs.set(String(f.ID_TORNEIO), [...(favs.get(String(f.ID_TORNEIO)) ?? []), String(f.ID_USUARIO)])
+    return [...byId].map(([id, rows]) => rowsToTournament(rows, favs.get(id) ?? []))
   }
 
   /** Uma transação: atualiza TORNEIO, apaga as filhas (cascata) e reinsere tudo (RN12). */
@@ -182,7 +195,8 @@ export class OracleRepo implements Repo {
     await this.with((c) =>
       on
         ? c.execute(
-            `MERGE INTO FAVORITO d USING (SELECT :u ID_USUARIO, :t ID_TORNEIO FROM DUAL) s ON (d.ID_USUARIO = s.ID_USUARIO AND d.ID_TORNEIO = s.ID_TORNEIO)
+            // a origem vem do próprio TORNEIO: torneio inexistente não gera linha (é ignorado, sem erro de FK)
+            `MERGE INTO FAVORITO d USING (SELECT :u ID_USUARIO, ID ID_TORNEIO FROM TORNEIO WHERE ID = :t) s ON (d.ID_USUARIO = s.ID_USUARIO AND d.ID_TORNEIO = s.ID_TORNEIO)
              WHEN NOT MATCHED THEN INSERT (ID_USUARIO, ID_TORNEIO) VALUES (s.ID_USUARIO, s.ID_TORNEIO)`,
             { u: userId, t: tournamentId },
             { autoCommit: true },
