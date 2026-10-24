@@ -50,7 +50,7 @@ jobs:
 
       - name: Relatório de cobertura
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: cobertura-frontend
           path: frontend/coverage
@@ -89,11 +89,61 @@ jobs:
 
       - name: Relatório de cobertura
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: cobertura-backend
           path: backend/coverage
           if-no-files-found: ignore
+
+  oracle:
+    name: Oracle (esquema, repositório e API contra um banco real)
+    needs: [backend]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    # Oracle 23ai Free só para este job (o mesmo do db/README.md); nada é instalado na máquina de ninguém
+    services:
+      oracle:
+        image: gvenzl/oracle-free:23-slim
+        env:
+          ORACLE_PASSWORD: admin-ci-123
+          APP_USER: playoff
+          APP_USER_PASSWORD: playoff123
+        ports:
+          - 1521:1521
+        options: >-
+          --health-cmd healthcheck.sh
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      ORACLE_USER: playoff
+      ORACLE_PASSWORD: playoff123
+      ORACLE_CONNECT_STRING: localhost:1521/FREEPDB1
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Criar as tabelas (db/000_drop.sql + db/001_schema.sql)
+        run: npm run db:schema
+
+      # todos os testes da API, agora gravando e lendo do Oracle
+      - name: Testes da API e do repositório contra o Oracle
+        run: npm run test:oracle
+
+      - name: Carga dos dados de demonstração (npm run db:seed)
+        run: |
+          npm run db:schema
+          npm run db:seed
 
   e2e:
     name: Ponta a ponta (navegador + API)
@@ -126,7 +176,7 @@ jobs:
 
       - name: Relatório do Playwright
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: playwright
           path: |

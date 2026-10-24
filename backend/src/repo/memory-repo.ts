@@ -28,7 +28,8 @@ export class MemoryRepo implements Repo {
   }
 
   async listOrgs() {
-    return structuredClone([...this.orgs.values()])
+    // como o ORDER BY NOME do Oracle
+    return structuredClone([...this.orgs.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)))
   }
   async getOrg(id: string) {
     const o = this.orgs.get(id)

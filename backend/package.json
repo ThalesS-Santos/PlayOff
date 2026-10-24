@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
+    "test:oracle": "vitest run --coverage --config vitest.oracle.config.ts",
+    "db:schema": "tsx src/scripts/db-schema.ts",
     "db:seed": "tsx src/scripts/seed-oracle.ts"
   },
   "dependencies": {
