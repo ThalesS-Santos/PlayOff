@@ -55,7 +55,7 @@ export default function App({ apiUrl = import.meta.env.VITE_API_URL, fetchImpl }
   return (
     <MotionConfig reducedMotion="user">
       <StoreProvider apiUrl={apiUrl} fetchImpl={fetchImpl}>
-        <BrowserRouter>
+        <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
           <Shell />
           <Toaster />
         </BrowserRouter>

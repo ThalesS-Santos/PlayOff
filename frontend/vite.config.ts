@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url'
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
+  // GitHub Pages serve o site em /PlayOff/ (build com `--mode pages`)
+  base: mode === 'pages' ? '/PlayOff/' : '/',
   // só nos testes (o Vitest roda com mode "test"): permite carregar o backend (../backend)
   // para os testes do modo API; o servidor de desenvolvimento continua restrito ao frontend
   server: mode === 'test' ? { fs: { allow: ['..'] } } : undefined,
