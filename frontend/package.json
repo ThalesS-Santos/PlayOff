@@ -13,7 +13,9 @@
     "preview": "vite preview",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "e2e:demo": "playwright test",
+    "e2e:relatorio": "playwright show-report"
   },
   "dependencies": {
     "clsx": "^2.1.1",
