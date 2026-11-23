@@ -9,7 +9,10 @@ import { test, type Page } from '@playwright/test'
  * então ela nunca interfere nas verificações dos testes.
  */
 
-export const DEMO = process.env.DEMO === '1'
+export const DEMO = process.env.DEMO === '1' || process.env.DEMO === 'rapido'
+// npm run e2e:demo:rapido: mesma legenda, pausas mais curtas
+const RAPIDO = process.env.DEMO === 'rapido'
+const tempo = (ms: number) => (RAPIDO ? Math.round(ms * 0.4) : ms)
 
 type Tipo = 'contexto' | 'acao' | 'verificacao'
 interface Legenda {
@@ -94,7 +97,7 @@ async function mostrar(page: Page, l: Legenda) {
 
 /** Pausa para a plateia ver a tela (só no modo demonstração). */
 export async function pausa(page: Page, ms = 800) {
-  if (DEMO) await page.waitForTimeout(ms)
+  if (DEMO) await page.waitForTimeout(tempo(ms))
 }
 
 /**
@@ -111,10 +114,10 @@ export async function passo<T>(page: Page, titulo: string, corpo: () => Promise<
     const tipo = CHAVES.find(([re]) => re.test(chave))?.[1] ?? anterior?.tipo ?? 'acao'
     const legenda: Legenda = { teste: test.info().title, chave, texto: m?.[2] ?? titulo, tipo, ok: false }
     await mostrar(page, legenda)
-    await page.waitForTimeout(1200) // tempo de ler antes de a ação começar
+    await page.waitForTimeout(tempo(1200)) // tempo de ler antes de a ação começar
     const resultado = await corpo()
     await mostrar(page, { ...legenda, ok: true })
-    await page.waitForTimeout(tipo === 'verificacao' ? 1800 : 900)
+    await page.waitForTimeout(tempo(tipo === 'verificacao' ? 1800 : 900))
     return resultado
   })
 }

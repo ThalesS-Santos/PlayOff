@@ -11,14 +11,16 @@ import { existsSync } from 'node:fs'
  *
  * Modo demonstração (npm run e2e:demo, ou DEMO=1): navegador visível em câmera lenta,
  * legenda de cada passo na tela (e2e/demo.ts) e relatório HTML com o rastro (trace) de
- * cada teste (npm run e2e:relatorio).
+ * cada teste (npm run e2e:relatorio). Versão mais curta: npm run e2e:demo:rapido.
  */
 
 const API = 'http://127.0.0.1:3333'
 const WEB = 'http://127.0.0.1:4173'
-const demo = process.env.DEMO === '1' || process.env.npm_lifecycle_event === 'e2e:demo'
+// e2e:demo:rapido = a mesma demonstração com menos câmera lenta e pausas mais curtas
+const rapido = process.env.DEMO === 'rapido' || process.env.npm_lifecycle_event === 'e2e:demo:rapido'
+const demo = rapido || process.env.DEMO === '1' || process.env.npm_lifecycle_event === 'e2e:demo'
 // os testes rodam em outros processos: é por aqui que eles sabem do modo demonstração
-if (demo) process.env.DEMO = '1'
+if (demo) process.env.DEMO = rapido ? 'rapido' : '1'
 const temChromium = existsSync(chromium.executablePath())
 const channel = process.env.PW_CHANNEL ?? (process.platform === 'win32' ? 'msedge' : temChromium ? undefined : 'chrome')
 
@@ -36,7 +38,7 @@ export default defineConfig({
     baseURL: WEB,
     trace: demo ? 'on' : 'retain-on-failure',
     ...(channel ? { channel } : {}),
-    ...(demo ? { headless: false, launchOptions: { slowMo: 350 } } : {}),
+    ...(demo ? { headless: false, launchOptions: { slowMo: rapido ? 100 : 350 } } : {}),
   },
   projects: [{ name: 'navegador', use: { ...devices['Desktop Chrome'], ...(channel ? { channel } : {}) } }],
   webServer: [

@@ -7,6 +7,50 @@ Este roteiro cobre as duas demonstrações ao vivo do seminário:
 
 Os tempos foram medidos no modo demonstração. O nome dos times nas partidas muda a cada execução, porque a chave é sorteada.
 
+> **Pouco tempo?** Vá direto para a [versão rápida](#versão-rápida-pouco-tempo), logo abaixo.
+
+---
+
+## Versão rápida (pouco tempo)
+
+Para apresentar no menor tempo, combine três coisas:
+
+1. **Use o modo rápido.** `npm run e2e:demo:rapido` mostra a mesma legenda e os mesmos cliques, mas com menos câmera lenta e pausas mais curtas. Cada teste fica entre 40% e 55% mais curto.
+2. **Mostre um teste por slide**, o mais curto e representativo de cada tipo. A opção `-g` escolhe o teste pelo código (ST02, CA03...).
+3. **Esconda a espera inicial.** Os primeiros 15 a 20 segundos de cada comando são só o Playwright subindo a API e o site, com a tela parada no terminal. Aperte Enter **no slide anterior** (slide 7 e slide 11) enquanto ainda está falando. Quando você chegar no slide da demonstração, o navegador já está abrindo.
+
+**Recomendado: cerca de 30 s por demonstração, contando a espera inicial.**
+
+Slide 8, teste de sistema: é o caso do slide 6.
+```bash
+npm run e2e:demo:rapido -- -g ST02
+```
+
+Slide 12, teste de aceitação: é o mais curto.
+```bash
+npm run e2e:demo:rapido -- -g CA03
+```
+
+Para trocar por outro teste, troque só o código depois de `-g`. Para rodar mais de um no mesmo comando, use `-g "ST02|CA03"`. Nesse caso, o Playwright roda os de aceitação antes dos de sistema (ordem alfabética dos arquivos).
+
+Tempo de cada teste, sem contar a espera inicial (medido):
+
+| Teste | O que mostra | `e2e:demo:rapido` | `e2e:demo` |
+|---|---|---|---|
+| **ST02** | espectador; torneio privado só abre com o código certo | **11 s** | 24 s |
+| ST01 | sorteia, registra súmula e o resultado continua depois de recarregar | 12 s | 21 s |
+| ST03 | conta nova de organizador cria um torneio | 13 s | 22 s |
+| **CA03** | torcedor vê chave, tabela e calendário, mas não edita nada | **11 s** | 24 s |
+| CA02 | vencedor avança sozinho, com a chave acesa no fim (o mais visual) | 17 s | 28 s |
+| CA04 | cabeças de chave folgam na 1ª rodada (BYE) | 18 s | 30 s |
+| CA01 | agenda sem conflitos, dia por dia | 22 s | 37 s |
+| CA05 | dupla eliminação: só sai com duas derrotas | 26 s | 40 s |
+
+**Ainda mais rápido, sem esperar nada:** rode tudo antes da apresentação e, na hora, só abra o relatório. Ele abre na hora e mostra cada teste com ✓ e os passos Dado/Quando/Então; dá para clicar num passo e mostrar a tela daquele momento (veja o Plano B, seção 6).
+```bash
+npx playwright show-report relatorio-ensaio
+```
+
 ---
 
 ## 1. Antes da apresentação (15 minutos antes)
