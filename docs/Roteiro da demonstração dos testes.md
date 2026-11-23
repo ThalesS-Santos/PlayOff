@@ -36,7 +36,7 @@ Os tempos foram medidos no modo demonstração. O nome dos times nas partidas mu
 5. **Deixe os comandos à mão.** Com a seta ↑ o terminal mostra o último comando de novo.
 
 > **Não precisa de internet.** A API, o site e o navegador rodam todos no computador.
-> **Navegador:** no Windows o teste usa o Edge; no Linux e no Mac, o Google Chrome. Os dois já vêm instalados, então não precisa baixar nada.
+> **Navegador:** o teste escolhe sozinho. No Windows usa o Edge. No Linux e no Mac usa o Chromium do Playwright, se ele tiver sido baixado, ou senão o Google Chrome. Não precisa baixar nada.
 
 ---
 
@@ -196,7 +196,7 @@ Vale citar na comparação, depois das demonstrações:
 
 | Mensagem | O que fazer |
 |---|---|
-| `Executable doesn't exist` | O Chrome (ou o Edge, no Windows) não foi encontrado. No Linux: `PW_CHANNEL=chrome npm run e2e:demo -- playoff.spec.ts` |
+| `Executable doesn't exist` ou `Chromium distribution 'chrome' is not found` | Nenhum navegador foi encontrado. Instale o Google Chrome ou baixe o do Playwright: `npx playwright install chromium` |
 | `port 3333` / `4173` *already in use* | Ficou uma execução anterior aberta: feche o outro terminal ou aperte `Ctrl` + `C` nele e rode de novo. |
 | Um teste falhou ao vivo | "Isso é o teste fazendo o trabalho dele: achou uma diferença." Abra `npm run e2e:relatorio`: ele mostra o passo que falhou com a imagem da tela. Depois siga com o relatório do ensaio. |
 
